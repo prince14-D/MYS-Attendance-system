@@ -8,7 +8,10 @@ const ADMIN_USERNAME = 'admin';
 const ADMIN_PASSWORD = 'admin123';
 const STORAGE_DIR = __DIR__ . '/storage';
 const SESSION_DIR = STORAGE_DIR . '/sessions';
+const PHOTOS_DIR = STORAGE_DIR . '/photos';
 const ATTENDANCE_FILE = STORAGE_DIR . '/attendance.json';
+const EMPLOYEES_FILE = STORAGE_DIR . '/employees.json';
+const DEPARTMENTS_FILE = STORAGE_DIR . '/departments.json';
 
 if (!is_dir(STORAGE_DIR)) {
     mkdir(STORAGE_DIR, 0775, true);
@@ -18,8 +21,20 @@ if (!is_dir(SESSION_DIR)) {
     mkdir(SESSION_DIR, 0775, true);
 }
 
+if (!is_dir(PHOTOS_DIR)) {
+    mkdir(PHOTOS_DIR, 0775, true);
+}
+
 if (!file_exists(ATTENDANCE_FILE)) {
     file_put_contents(ATTENDANCE_FILE, json_encode([], JSON_PRETTY_PRINT));
+}
+
+if (!file_exists(EMPLOYEES_FILE)) {
+    file_put_contents(EMPLOYEES_FILE, json_encode([], JSON_PRETTY_PRINT));
+}
+
+if (!file_exists(DEPARTMENTS_FILE)) {
+    file_put_contents(DEPARTMENTS_FILE, json_encode([], JSON_PRETTY_PRINT));
 }
 
 function h(string $value): string

@@ -1,0 +1,20 @@
+{
+    "EMP001": {
+        "employee_number": "EMP001",
+        "employee_name": "Prince W Dahn Jr",
+        "registered_at": "2026-07-21 14:37:32",
+        "updated_at": "2026-07-21 14:37:32"
+    },
+    "EMP002": {
+        "employee_number": "EMP002",
+        "employee_name": "Mary Jone",
+        "registered_at": "2026-07-21 14:42:34",
+        "updated_at": "2026-07-21 14:42:34"
+    },
+    "EMP006": {
+        "employee_number": "EMP006",
+        "employee_name": "SAMGIE DAHN",
+        "registered_at": "2026-07-21 15:07:04",
+        "updated_at": "2026-07-21 15:07:04"
+    }
+}

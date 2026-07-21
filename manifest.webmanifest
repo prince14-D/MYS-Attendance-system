@@ -1,0 +1,21 @@
+{
+    "name": "Ministry of Youth & Sports Attendance System",
+    "short_name": "MYS Attendance",
+    "description": "Offline-capable employee attendance clock for the Ministry of Youth & Sports.",
+    "id": "/index.php",
+    "start_url": "index.php",
+    "scope": "./",
+    "display": "standalone",
+    "display_override": ["standalone", "minimal-ui"],
+    "orientation": "portrait",
+    "background_color": "#f5f7fb",
+    "theme_color": "#123f7a",
+    "icons": [
+        {
+            "src": "assets/app-icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
+}
