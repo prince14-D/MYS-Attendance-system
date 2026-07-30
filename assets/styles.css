@@ -417,7 +417,7 @@ select:focus {
 }
 
 .content {
-    width: min(1120px, calc(100% - 32px));
+    width: min(1360px, calc(100% - 32px));
     margin: 28px auto 48px;
 }
 
@@ -427,7 +427,7 @@ select:focus {
 
 .admin-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 18px;
     margin: 0 0 24px;
 }
@@ -441,6 +441,10 @@ select:focus {
 
 .admin-box h2 {
     font-size: 20px;
+}
+
+.wide-admin-box {
+    grid-column: span 2;
 }
 
 .stacked-form {
@@ -460,6 +464,23 @@ select:focus {
 .mini-table-wrap {
     max-height: 285px;
     overflow: auto;
+}
+
+.editable-table input,
+.editable-table select,
+td input,
+td select {
+    min-width: 135px;
+    padding: 9px 10px;
+}
+
+.row-form {
+    display: flex;
+    gap: 8px;
+}
+
+.action-cell {
+    min-width: 140px;
 }
 
 .small-empty {
@@ -604,6 +625,10 @@ th {
 
     .admin-grid {
         grid-template-columns: 1fr;
+    }
+
+    .wide-admin-box {
+        grid-column: auto;
     }
 
     th,

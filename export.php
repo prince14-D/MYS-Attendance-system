@@ -36,6 +36,7 @@ function export_rows(array $records, string $date, string $departmentName): arra
     $rows[] = [
         'Employee Number',
         'Employee Name',
+        'Position',
         'Department',
         'Date',
         'Clock In',
@@ -49,6 +50,7 @@ function export_rows(array $records, string $date, string $departmentName): arra
         $rows[] = [
             $record['employee_number'],
             $record['employee_name'] ?? '-',
+            $record['position'] ?? '-',
             $record['department_name'] ?? 'Unassigned',
             $record['date'],
             $record['clock_in'] ?: '-',
@@ -60,7 +62,7 @@ function export_rows(array $records, string $date, string $departmentName): arra
     }
 
     if (count($records) === 0) {
-        $rows[] = ['No attendance records found for this date.', '', '', '', '', '', '', '', ''];
+        $rows[] = ['No attendance records found for this date.', '', '', '', '', '', '', '', '', ''];
     }
 
     return $rows;
@@ -126,69 +128,81 @@ function pdf_rect(int $x, int $y, int $width, int $height, string $fill = ''): s
 
 function build_simple_pdf(array $records, string $date, string $departmentName): string
 {
-    $content = "0.07 0.25 0.48 rg\n0 545 842 50 re f\n";
-    $content .= "0.78 0.12 0.20 rg\n0 540 842 5 re f\n";
+    $completeCount = count(array_filter($records, static fn (array $record): bool => ($record['status'] ?? '') === 'Complete'));
+    $incompleteCount = count($records) - $completeCount;
+
+    $content = "0.07 0.25 0.48 rg\n0 535 842 60 re f\n";
+    $content .= "0.78 0.12 0.20 rg\n0 530 842 5 re f\n";
     $content .= "1 1 1 rg\n";
-    $content .= pdf_text(APP_NAME, 38, 568, 16, 'F2');
-    $content .= pdf_text('Daily Attendance Record', 38, 551, 11);
+    $content .= pdf_text(APP_NAME, 38, 566, 16, 'F2');
+    $content .= pdf_text('Daily Attendance Record', 38, 548, 11);
 
     $content .= "0 0 0 rg\n";
-    $content .= pdf_text('Date: ' . $date, 38, 516, 11, 'F2');
-    $content .= pdf_text('Department: ' . $departmentName, 180, 516, 11, 'F2');
-    $content .= pdf_text('Generated: ' . date('Y-m-d H:i'), 560, 516, 10);
+    $content .= pdf_text('Date: ' . $date, 38, 508, 11, 'F2');
+    $content .= pdf_text('Department: ' . $departmentName, 180, 508, 11, 'F2');
+    $content .= pdf_text('Generated: ' . date('Y-m-d H:i'), 590, 508, 10);
 
-    $content .= "0.93 0.95 0.98 rg\n38 488 766 24 re f\n";
+    $content .= "0.93 0.95 0.98 rg\n38 462 174 30 re f\n232 462 174 30 re f\n426 462 174 30 re f\n620 462 184 30 re f\n";
+    $content .= "0.07 0.25 0.48 rg\n";
+    $content .= pdf_text('Total Records', 50, 480, 9, 'F2');
+    $content .= pdf_text((string) count($records), 154, 480, 11, 'F2');
+    $content .= pdf_text('Complete', 244, 480, 9, 'F2');
+    $content .= pdf_text((string) $completeCount, 348, 480, 11, 'F2');
+    $content .= pdf_text('Incomplete', 438, 480, 9, 'F2');
+    $content .= pdf_text((string) $incompleteCount, 552, 480, 11, 'F2');
+    $content .= pdf_text('Department', 632, 480, 9, 'F2');
+    $content .= pdf_text(substr($departmentName, 0, 18), 718, 480, 9, 'F2');
+
+    $content .= "0.07 0.25 0.48 rg\n38 426 766 26 re f\n";
+    $content .= "1 1 1 rg\n";
     $content .= "0.07 0.25 0.48 rg\n";
     $headers = [
-        ['No.', 44],
-        ['Employee No.', 78],
-        ['Name', 172],
-        ['Department', 322],
-        ['Clock In', 462],
-        ['Clock Out', 540],
-        ['Hours', 622],
-        ['Status', 680],
+        ['Employee Number', 58],
+        ['Employee Name', 202],
+        ['Clock In', 430],
+        ['Clock Out', 558],
+        ['Hours Work', 690],
     ];
 
     foreach ($headers as [$label, $x]) {
-        $content .= pdf_text($label, $x, 496, 9, 'F2');
+        $content .= "1 1 1 rg\n";
+        $content .= pdf_text($label, $x, 435, 10, 'F2');
     }
 
     $content .= "0 0 0 rg\n";
-    $y = 466;
-    $rowNumber = 1;
+    $y = 404;
 
-    foreach (array_slice($records, 0, 18) as $record) {
-        $content .= pdf_line(38, $y - 7, 804, $y - 7);
+    foreach (array_slice($records, 0, 15) as $index => $record) {
+        if ($index % 2 === 0) {
+            $content .= "0.98 0.99 1 rg\n38 " . ($y - 9) . " 766 24 re f\n";
+            $content .= "0 0 0 rg\n";
+        }
+
+        $content .= pdf_line(38, $y - 11, 804, $y - 11);
         $values = [
-            [(string) $rowNumber, 44],
-            [substr((string) $record['employee_number'], 0, 13), 78],
-            [substr((string) ($record['employee_name'] ?? '-'), 0, 22), 172],
-            [substr((string) ($record['department_name'] ?? 'Unassigned'), 0, 20), 322],
-            [(string) ($record['clock_in'] ?: '-'), 462],
-            [(string) ($record['clock_out'] ?: '-'), 540],
-            [(string) (worked_hours($record) ?: '-'), 622],
-            [substr((string) $record['status'], 0, 12), 680],
+            [substr((string) $record['employee_number'], 0, 18), 58],
+            [substr((string) ($record['employee_name'] ?? '-'), 0, 30), 202],
+            [(string) ($record['clock_in'] ?: '-'), 430],
+            [(string) ($record['clock_out'] ?: '-'), 558],
+            [(string) (worked_hours($record) ?: '-'), 690],
         ];
 
         foreach ($values as [$value, $x]) {
-            $content .= pdf_text($value, $x, $y, 9);
+            $content .= pdf_text($value, $x, $y, 10);
         }
 
-        $y -= 22;
-        $rowNumber++;
+        $y -= 26;
     }
 
     if (count($records) === 0) {
-        $content .= pdf_text('No attendance records found for this date and department.', 44, 462, 10);
-    } elseif (count($records) > 18) {
-        $content .= pdf_text('Only the first 18 records are shown on this PDF page. Export CSV or Excel for the complete list.', 44, $y, 9);
+        $content .= pdf_text('No attendance records found for this date and department.', 58, 398, 10);
+    } elseif (count($records) > 15) {
+        $content .= pdf_text('Only the first 15 records are shown on this PDF page. Export CSV or Excel for the complete list.', 58, $y, 9);
     }
 
     $content .= "0.07 0.25 0.48 rg\n";
-    $content .= pdf_text('Summary', 38, 92, 11, 'F2');
+    $content .= pdf_text('Authorization', 38, 92, 11, 'F2');
     $content .= "0 0 0 rg\n";
-    $content .= pdf_text('Total Records: ' . count($records), 38, 74, 10);
     $content .= pdf_line(250, 72, 430, 72);
     $content .= pdf_text('Prepared By', 295, 55, 9);
     $content .= pdf_line(525, 72, 705, 72);

@@ -94,9 +94,19 @@ function department_id_from_name(string $departmentName): string
     return trim($departmentId, '-');
 }
 
+function normalize_person_name(string $name): string
+{
+    return trim(preg_replace('/\s+/', ' ', $name) ?? '');
+}
+
+function normalize_position(string $position): string
+{
+    return trim(preg_replace('/\s+/', ' ', $position) ?? '');
+}
+
 function register_department(string $departmentName): array
 {
-    $departmentName = trim(preg_replace('/\s+/', ' ', $departmentName) ?? '');
+    $departmentName = normalize_person_name($departmentName);
 
     if ($departmentName === '' || !preg_match('/^[A-Za-z0-9 &.\'-]{2,80}$/', $departmentName)) {
         return ['ok' => false, 'message' => 'Enter a valid department name.'];
@@ -125,6 +135,121 @@ function register_department(string $departmentName): array
     ];
 }
 
+function ensure_department(string $departmentName): ?array
+{
+    $departmentName = normalize_person_name($departmentName);
+
+    if ($departmentName === '') {
+        return null;
+    }
+
+    $departmentId = department_id_from_name($departmentName);
+    $departments = read_departments();
+
+    if (isset($departments[$departmentId])) {
+        return $departments[$departmentId];
+    }
+
+    $result = register_department($departmentName);
+
+    return $result['ok'] ? find_department($departmentId) : null;
+}
+
+function update_department(string $departmentId, string $departmentName): array
+{
+    $departmentId = normalize_department_id($departmentId);
+    $departmentName = normalize_person_name($departmentName);
+    $departments = read_departments();
+
+    if (!isset($departments[$departmentId])) {
+        return ['ok' => false, 'message' => 'Department was not found.'];
+    }
+
+    if ($departmentName === '' || !preg_match('/^[A-Za-z0-9 &.\'-]{2,80}$/', $departmentName)) {
+        return ['ok' => false, 'message' => 'Enter a valid department name.'];
+    }
+
+    $newDepartmentId = department_id_from_name($departmentName);
+
+    if ($newDepartmentId === '') {
+        return ['ok' => false, 'message' => 'Enter a valid department name.'];
+    }
+
+    if ($newDepartmentId !== $departmentId && isset($departments[$newDepartmentId])) {
+        return ['ok' => false, 'message' => 'A department with that name already exists.'];
+    }
+
+    $createdAt = $departments[$departmentId]['created_at'] ?? date('Y-m-d H:i:s');
+    unset($departments[$departmentId]);
+    $departments[$newDepartmentId] = [
+        'department_id' => $newDepartmentId,
+        'department_name' => $departmentName,
+        'created_at' => $createdAt,
+        'updated_at' => date('Y-m-d H:i:s'),
+    ];
+
+    write_departments($departments);
+
+    $employees = read_employees();
+    foreach ($employees as $employeeNumber => $employee) {
+        if (($employee['department_id'] ?? '') === $departmentId) {
+            $employees[$employeeNumber]['department_id'] = $newDepartmentId;
+            $employees[$employeeNumber]['department_name'] = $departmentName;
+            $employees[$employeeNumber]['updated_at'] = date('Y-m-d H:i:s');
+        }
+    }
+    write_employees($employees);
+
+    $records = read_attendance();
+    foreach ($records as $date => $dayRecords) {
+        foreach ($dayRecords as $employeeNumber => $record) {
+            if (($record['department_id'] ?? '') === $departmentId) {
+                $records[$date][$employeeNumber]['department_id'] = $newDepartmentId;
+                $records[$date][$employeeNumber]['department_name'] = $departmentName;
+            }
+        }
+    }
+    write_attendance($records);
+
+    return ['ok' => true, 'message' => 'Department updated successfully.'];
+}
+
+function delete_department(string $departmentId): array
+{
+    $departmentId = normalize_department_id($departmentId);
+    $departments = read_departments();
+
+    if (!isset($departments[$departmentId])) {
+        return ['ok' => false, 'message' => 'Department was not found.'];
+    }
+
+    unset($departments[$departmentId]);
+    write_departments($departments);
+
+    $employees = read_employees();
+    foreach ($employees as $employeeNumber => $employee) {
+        if (($employee['department_id'] ?? '') === $departmentId) {
+            $employees[$employeeNumber]['department_id'] = '';
+            $employees[$employeeNumber]['department_name'] = 'Unassigned';
+            $employees[$employeeNumber]['updated_at'] = date('Y-m-d H:i:s');
+        }
+    }
+    write_employees($employees);
+
+    $records = read_attendance();
+    foreach ($records as $date => $dayRecords) {
+        foreach ($dayRecords as $employeeNumber => $record) {
+            if (($record['department_id'] ?? '') === $departmentId) {
+                $records[$date][$employeeNumber]['department_id'] = '';
+                $records[$date][$employeeNumber]['department_name'] = 'Unassigned';
+            }
+        }
+    }
+    write_attendance($records);
+
+    return ['ok' => true, 'message' => 'Department deleted. Assigned employees are now unassigned.'];
+}
+
 function all_departments(): array
 {
     $departments = array_values(read_departments());
@@ -144,21 +269,26 @@ function find_department(string $departmentId): ?array
     return $departments[$departmentId] ?? null;
 }
 
-function register_employee(string $employeeNumber, string $employeeName, string $departmentId): array
+function register_employee(string $employeeNumber, string $employeeName, string $departmentId, string $position = ''): array
 {
     $employeeNumber = normalize_employee_number($employeeNumber);
-    $employeeName = trim(preg_replace('/\s+/', ' ', $employeeName) ?? '');
-    $department = find_department($departmentId);
+    $employeeName = normalize_person_name($employeeName);
+    $position = normalize_position($position);
+    $department = normalize_department_id($departmentId) !== '' ? find_department($departmentId) : null;
 
     if ($employeeNumber === '' || !preg_match('/^[A-Z0-9-]{2,30}$/', $employeeNumber)) {
         return ['ok' => false, 'message' => 'Enter a valid employee number.'];
     }
 
-    if ($employeeName === '' || !preg_match('/^[A-Za-z .\'-]{2,80}$/', $employeeName)) {
+    if ($employeeName === '' || !preg_match('/^[A-Za-z .\'-]{2,100}$/', $employeeName)) {
         return ['ok' => false, 'message' => 'Enter a valid employee name.'];
     }
 
-    if ($department === null) {
+    if ($position !== '' && !preg_match('/^[A-Za-z0-9 &.,\'\/()-]{2,100}$/', $position)) {
+        return ['ok' => false, 'message' => 'Enter a valid position.'];
+    }
+
+    if (normalize_department_id($departmentId) !== '' && $department === null) {
         return ['ok' => false, 'message' => 'Select a registered department.'];
     }
 
@@ -167,18 +297,42 @@ function register_employee(string $employeeNumber, string $employeeName, string 
     $employees[$employeeNumber] = [
         'employee_number' => $employeeNumber,
         'employee_name' => $employeeName,
-        'department_id' => $department['department_id'],
-        'department_name' => $department['department_name'],
+        'position' => $position,
+        'department_id' => $department['department_id'] ?? '',
+        'department_name' => $department['department_name'] ?? 'Unassigned',
         'registered_at' => $employees[$employeeNumber]['registered_at'] ?? date('Y-m-d H:i:s'),
         'updated_at' => date('Y-m-d H:i:s'),
     ];
 
     write_employees($employees);
+    sync_employee_details_to_attendance($employeeNumber, $employees[$employeeNumber]);
 
     return [
         'ok' => true,
         'message' => $isUpdate ? 'Employee updated successfully.' : 'Employee registered successfully.',
     ];
+}
+
+function sync_employee_details_to_attendance(string $employeeNumber, array $employee): void
+{
+    $records = read_attendance();
+    $changed = false;
+
+    foreach ($records as $date => $dayRecords) {
+        if (!isset($dayRecords[$employeeNumber])) {
+            continue;
+        }
+
+        $records[$date][$employeeNumber]['employee_name'] = $employee['employee_name'] ?? '';
+        $records[$date][$employeeNumber]['position'] = $employee['position'] ?? '';
+        $records[$date][$employeeNumber]['department_id'] = $employee['department_id'] ?? '';
+        $records[$date][$employeeNumber]['department_name'] = $employee['department_name'] ?? 'Unassigned';
+        $changed = true;
+    }
+
+    if ($changed) {
+        write_attendance($records);
+    }
 }
 
 function delete_employee(string $employeeNumber): array
@@ -214,6 +368,538 @@ function find_employee(string $employeeNumber): ?array
     $employeeNumber = normalize_employee_number($employeeNumber);
 
     return $employees[$employeeNumber] ?? null;
+}
+
+function import_cell_value(mixed $value): string
+{
+    return trim((string) $value);
+}
+
+function import_header_key(string $header): string
+{
+    return strtolower(preg_replace('/[^a-z0-9]+/i', '', $header) ?? '');
+}
+
+function import_csv_rows(string $path): array
+{
+    $handle = fopen($path, 'r');
+
+    if (!$handle) {
+        throw new RuntimeException('Unable to read the uploaded file.');
+    }
+
+    $rows = [];
+
+    while (($row = fgetcsv($handle)) !== false) {
+        $rows[] = array_map('import_cell_value', $row);
+    }
+
+    fclose($handle);
+
+    return $rows;
+}
+
+function import_html_table_rows(string $path): array
+{
+    $contents = file_get_contents($path);
+
+    if ($contents === false) {
+        throw new RuntimeException('Unable to read the uploaded file.');
+    }
+
+    $previous = libxml_use_internal_errors(true);
+    $document = new DOMDocument();
+    $loaded = $document->loadHTML($contents);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+
+    if (!$loaded) {
+        throw new RuntimeException('Unable to read the Excel table.');
+    }
+
+    $rows = [];
+
+    foreach ($document->getElementsByTagName('tr') as $tr) {
+        $row = [];
+
+        foreach ($tr->childNodes as $cell) {
+            if ($cell instanceof DOMElement && in_array(strtolower($cell->tagName), ['td', 'th'], true)) {
+                $row[] = import_cell_value($cell->textContent);
+            }
+        }
+
+        if (count(array_filter($row, static fn (string $value): bool => $value !== '')) > 0) {
+            $rows[] = $row;
+        }
+    }
+
+    return $rows;
+}
+
+function import_xlsx_shared_strings(ZipArchive $zip): array
+{
+    $xml = $zip->getFromName('xl/sharedStrings.xml');
+
+    if ($xml === false) {
+        return [];
+    }
+
+    $strings = [];
+    $reader = new XMLReader();
+    $reader->XML($xml);
+
+    while ($reader->read()) {
+        if ($reader->nodeType === XMLReader::ELEMENT && $reader->localName === 'si') {
+            $node = new SimpleXMLElement($reader->readOuterXML());
+            $textParts = $node->xpath('.//*[local-name()="t"]') ?: [];
+            $value = '';
+
+            foreach ($textParts as $part) {
+                $value .= (string) $part;
+            }
+
+            $strings[] = $value;
+        }
+    }
+
+    $reader->close();
+
+    return $strings;
+}
+
+function import_xlsx_first_sheet_path(ZipArchive $zip): string
+{
+    $workbook = $zip->getFromName('xl/workbook.xml');
+    $rels = $zip->getFromName('xl/_rels/workbook.xml.rels');
+
+    if ($workbook === false || $rels === false) {
+        return 'xl/worksheets/sheet1.xml';
+    }
+
+    $workbookXml = new SimpleXMLElement($workbook);
+    $relXml = new SimpleXMLElement($rels);
+    $workbookXml->registerXPathNamespace('main', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+    $workbookXml->registerXPathNamespace('rel', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships');
+
+    $sheets = $workbookXml->xpath('//main:sheet') ?: [];
+
+    if (count($sheets) === 0) {
+        return 'xl/worksheets/sheet1.xml';
+    }
+
+    $relationId = (string) $sheets[0]->attributes('http://schemas.openxmlformats.org/officeDocument/2006/relationships')['id'];
+
+    foreach ($relXml->Relationship as $relationship) {
+        if ((string) $relationship['Id'] === $relationId) {
+            $target = (string) $relationship['Target'];
+            return str_starts_with($target, '/') ? ltrim($target, '/') : 'xl/' . ltrim($target, '/');
+        }
+    }
+
+    return 'xl/worksheets/sheet1.xml';
+}
+
+function import_xlsx_rows(string $path): array
+{
+    if (!class_exists(ZipArchive::class)) {
+        throw new RuntimeException('This server cannot read .xlsx files. Upload CSV or .xls instead.');
+    }
+
+    $zip = new ZipArchive();
+
+    if ($zip->open($path) !== true) {
+        throw new RuntimeException('Unable to open the Excel file.');
+    }
+
+    $sharedStrings = import_xlsx_shared_strings($zip);
+    $sheetPath = import_xlsx_first_sheet_path($zip);
+    $sheetXml = $zip->getFromName($sheetPath);
+    $zip->close();
+
+    if ($sheetXml === false) {
+        throw new RuntimeException('Unable to find the first worksheet in the Excel file.');
+    }
+
+    $rows = [];
+    $reader = new XMLReader();
+    $reader->XML($sheetXml);
+
+    while ($reader->read()) {
+        if ($reader->nodeType !== XMLReader::ELEMENT || $reader->localName !== 'row') {
+            continue;
+        }
+
+        $rowXml = new SimpleXMLElement($reader->readOuterXML());
+        $row = [];
+
+        foreach ($rowXml->children($rowXml->getNamespaces(true)[''] ?? null)->c as $cell) {
+            $attributes = $cell->attributes();
+            $reference = (string) ($attributes['r'] ?? '');
+            $type = (string) ($attributes['t'] ?? '');
+            $column = $reference !== '' ? (int) (array_reduce(str_split(preg_replace('/[^A-Z]/', '', strtoupper($reference)) ?: 'A'), static function (int $carry, string $letter): int {
+                return ($carry * 26) + (ord($letter) - 64);
+            }, 0) - 1) : count($row);
+            $value = '';
+
+            if ($type === 's') {
+                $value = $sharedStrings[(int) $cell->v] ?? '';
+            } elseif ($type === 'inlineStr') {
+                $value = implode('', array_map('strval', $cell->xpath('.//*[local-name()="t"]') ?: []));
+            } else {
+                $value = (string) ($cell->v ?? '');
+            }
+
+            $row[$column] = import_cell_value($value);
+        }
+
+        if (count($row) > 0) {
+            ksort($row);
+            $rows[] = array_values($row);
+        }
+    }
+
+    $reader->close();
+
+    return $rows;
+}
+
+function import_spreadsheet_rows(array $file): array
+{
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        return ['ok' => false, 'message' => 'Choose an Excel or CSV file to import.'];
+    }
+
+    if (($file['size'] ?? 0) > 5 * 1024 * 1024) {
+        return ['ok' => false, 'message' => 'The import file must be 5 MB or smaller.'];
+    }
+
+    $path = (string) ($file['tmp_name'] ?? '');
+    $extension = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+
+    try {
+        $rows = match ($extension) {
+            'csv' => import_csv_rows($path),
+            'xls' => import_html_table_rows($path),
+            'xlsx' => import_xlsx_rows($path),
+            default => throw new RuntimeException('Upload a .xlsx, .xls, or .csv file.'),
+        };
+    } catch (Throwable $exception) {
+        return ['ok' => false, 'message' => $exception->getMessage()];
+    }
+
+    return ['ok' => true, 'rows' => $rows];
+}
+
+function import_excel_serial_date(float $serial): string
+{
+    $base = new DateTimeImmutable('1899-12-30');
+    return $base->modify('+' . (int) floor($serial) . ' days')->format('Y-m-d');
+}
+
+function import_excel_serial_time(float $serial): string
+{
+    $seconds = (int) round(($serial - floor($serial)) * 86400);
+    $seconds = max(0, min(86399, $seconds));
+
+    return gmdate('H:i:s', $seconds);
+}
+
+function import_date_value(string $value): string
+{
+    $value = trim($value);
+
+    if ($value === '' || $value === '-') {
+        return '';
+    }
+
+    if (is_numeric($value) && (float) $value > 1000) {
+        return import_excel_serial_date((float) $value);
+    }
+
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+        return $value;
+    }
+
+    $timestamp = strtotime($value);
+
+    return $timestamp ? date('Y-m-d', $timestamp) : '';
+}
+
+function import_time_value(string $value): string
+{
+    $value = trim($value);
+
+    if ($value === '' || $value === '-') {
+        return '';
+    }
+
+    if (is_numeric($value)) {
+        return import_excel_serial_time((float) $value);
+    }
+
+    if (preg_match('/^(\d{1,2}):(\d{2})(?::(\d{2}))?/', $value, $matches)) {
+        return sprintf('%02d:%02d:%02d', (int) $matches[1], (int) $matches[2], (int) ($matches[3] ?? 0));
+    }
+
+    $timestamp = strtotime($value);
+
+    return $timestamp ? date('H:i:s', $timestamp) : '';
+}
+
+function import_attendance_from_upload(array $file): array
+{
+    $spreadsheet = import_spreadsheet_rows($file);
+
+    if (!$spreadsheet['ok']) {
+        return $spreadsheet;
+    }
+
+    $rows = $spreadsheet['rows'];
+    $headerIndex = null;
+    $columns = [];
+
+    foreach ($rows as $index => $row) {
+        $keys = array_map(static fn (string $header): string => import_header_key($header), $row);
+
+        foreach ($keys as $columnIndex => $key) {
+            $columns[$key] = $columnIndex;
+        }
+
+        if (isset($columns['employeenumber'], $columns['date'])) {
+            $headerIndex = $index;
+            break;
+        }
+
+        $columns = [];
+    }
+
+    if ($headerIndex === null) {
+        return ['ok' => false, 'message' => 'The sheet needs Employee Number and Date columns.'];
+    }
+
+    $records = read_attendance();
+    $employees = read_employees();
+    $imported = 0;
+    $skipped = 0;
+
+    foreach (array_slice($rows, $headerIndex + 1) as $row) {
+        $employeeNumber = normalize_employee_number($row[$columns['employeenumber']] ?? '');
+        $date = import_date_value($row[$columns['date']] ?? '');
+
+        if ($employeeNumber === '' || !preg_match('/^[A-Z0-9-]{2,30}$/', $employeeNumber) || $date === '') {
+            $skipped++;
+            continue;
+        }
+
+        $employee = $employees[$employeeNumber] ?? [];
+        $employeeName = import_cell_value($row[$columns['employeename'] ?? -1] ?? ($employee['employee_name'] ?? ''));
+        $position = import_cell_value($row[$columns['position'] ?? -1] ?? ($employee['position'] ?? ''));
+        $departmentName = import_cell_value($row[$columns['department'] ?? -1] ?? ($employee['department_name'] ?? 'Unassigned'));
+        $department = $departmentName !== '' && $departmentName !== 'Unassigned' ? ensure_department($departmentName) : null;
+        $departmentId = $department['department_id'] ?? ($employee['department_id'] ?? '');
+        $departmentName = $department['department_name'] ?? $departmentName;
+        $clockIn = import_time_value($row[$columns['clockin'] ?? -1] ?? '');
+        $clockOut = import_time_value($row[$columns['clockout'] ?? -1] ?? '');
+        $existing = $records[$date][$employeeNumber] ?? [];
+
+        if (!isset($records[$date])) {
+            $records[$date] = [];
+        }
+
+        $records[$date][$employeeNumber] = [
+            'employee_number' => $employeeNumber,
+            'employee_name' => $employeeName !== '' ? $employeeName : ($existing['employee_name'] ?? ''),
+            'position' => $position !== '' ? $position : ($existing['position'] ?? ''),
+            'department_id' => $departmentId,
+            'department_name' => $departmentName !== '' ? $departmentName : ($existing['department_name'] ?? 'Unassigned'),
+            'date' => $date,
+            'clock_in' => $clockIn,
+            'clock_out' => $clockOut,
+            'clock_in_photo' => $existing['clock_in_photo'] ?? '',
+            'status' => $clockIn !== '' && $clockOut !== '' ? 'Complete' : 'Incomplete',
+        ];
+
+        $imported++;
+    }
+
+    if ($imported > 0) {
+        ksort($records);
+        write_attendance($records);
+    }
+
+    return [
+        'ok' => $imported > 0,
+        'message' => $imported . ' attendance record' . ($imported === 1 ? '' : 's') . ' imported. ' . $skipped . ' row' . ($skipped === 1 ? '' : 's') . ' skipped.',
+    ];
+}
+
+function import_employees_from_upload(array $file): array
+{
+    $spreadsheet = import_spreadsheet_rows($file);
+
+    if (!$spreadsheet['ok']) {
+        return $spreadsheet;
+    }
+
+    $rows = $spreadsheet['rows'];
+    $headerIndex = null;
+    $columns = [];
+
+    foreach ($rows as $index => $row) {
+        $keys = array_map(static fn (string $header): string => import_header_key($header), $row);
+
+        foreach ($keys as $columnIndex => $key) {
+            $columns[$key] = $columnIndex;
+        }
+
+        if (isset($columns['employeenumber'], $columns['employeename'])) {
+            $headerIndex = $index;
+            break;
+        }
+
+        $columns = [];
+    }
+
+    if ($headerIndex === null) {
+        return ['ok' => false, 'message' => 'The sheet needs Employee Number and Employee Name columns.'];
+    }
+
+    $imported = 0;
+    $skipped = 0;
+
+    foreach (array_slice($rows, $headerIndex + 1) as $row) {
+        $employeeNumber = normalize_employee_number($row[$columns['employeenumber']] ?? '');
+        $employeeName = import_cell_value($row[$columns['employeename']] ?? '');
+        $position = import_cell_value($row[$columns['position'] ?? -1] ?? '');
+        $departmentName = import_cell_value($row[$columns['department'] ?? -1] ?? '');
+        $departmentId = '';
+
+        if ($departmentName !== '') {
+            $department = ensure_department($departmentName);
+            $departmentId = $department['department_id'] ?? '';
+        }
+
+        $result = register_employee($employeeNumber, $employeeName, $departmentId, $position);
+
+        if ($result['ok']) {
+            $imported++;
+        } else {
+            $skipped++;
+        }
+    }
+
+    return [
+        'ok' => $imported > 0,
+        'message' => $imported . ' employee' . ($imported === 1 ? '' : 's') . ' imported. ' . $skipped . ' row' . ($skipped === 1 ? '' : 's') . ' skipped.',
+    ];
+}
+
+function update_attendance_record(
+    string $originalDate,
+    string $originalEmployeeNumber,
+    string $employeeNumber,
+    string $employeeName,
+    string $position,
+    string $departmentId,
+    string $date,
+    string $clockIn,
+    string $clockOut
+): array {
+    $originalDate = import_date_value($originalDate);
+    $originalEmployeeNumber = normalize_employee_number($originalEmployeeNumber);
+    $employeeNumber = normalize_employee_number($employeeNumber);
+    $employeeName = normalize_person_name($employeeName);
+    $position = normalize_position($position);
+    $departmentId = normalize_department_id($departmentId);
+    $date = import_date_value($date);
+    $clockIn = import_time_value($clockIn);
+    $clockOut = import_time_value($clockOut);
+
+    if ($originalDate === '' || $originalEmployeeNumber === '') {
+        return ['ok' => false, 'message' => 'Attendance record was not found.'];
+    }
+
+    if ($employeeNumber === '' || !preg_match('/^[A-Z0-9-]{2,30}$/', $employeeNumber)) {
+        return ['ok' => false, 'message' => 'Enter a valid employee number.'];
+    }
+
+    if ($employeeName === '' || !preg_match('/^[A-Za-z .\'-]{2,100}$/', $employeeName)) {
+        return ['ok' => false, 'message' => 'Enter a valid employee name.'];
+    }
+
+    if ($position !== '' && !preg_match('/^[A-Za-z0-9 &.,\'\/()-]{2,100}$/', $position)) {
+        return ['ok' => false, 'message' => 'Enter a valid position.'];
+    }
+
+    if ($date === '') {
+        return ['ok' => false, 'message' => 'Enter a valid attendance date.'];
+    }
+
+    if ($clockIn !== '' && $clockOut !== '' && strtotime($date . ' ' . $clockOut) < strtotime($date . ' ' . $clockIn)) {
+        return ['ok' => false, 'message' => 'Clock out cannot be earlier than clock in.'];
+    }
+
+    $department = $departmentId !== '' ? find_department($departmentId) : null;
+
+    if ($departmentId !== '' && $department === null) {
+        return ['ok' => false, 'message' => 'Select a registered department.'];
+    }
+
+    $records = read_attendance();
+    $existing = $records[$originalDate][$originalEmployeeNumber] ?? null;
+
+    if (!is_array($existing)) {
+        return ['ok' => false, 'message' => 'Attendance record was not found.'];
+    }
+
+    unset($records[$originalDate][$originalEmployeeNumber]);
+
+    if (isset($records[$originalDate]) && count($records[$originalDate]) === 0) {
+        unset($records[$originalDate]);
+    }
+
+    if (!isset($records[$date])) {
+        $records[$date] = [];
+    }
+
+    $records[$date][$employeeNumber] = [
+        'employee_number' => $employeeNumber,
+        'employee_name' => $employeeName,
+        'position' => $position,
+        'department_id' => $department['department_id'] ?? '',
+        'department_name' => $department['department_name'] ?? 'Unassigned',
+        'date' => $date,
+        'clock_in' => $clockIn,
+        'clock_out' => $clockOut,
+        'clock_in_photo' => $existing['clock_in_photo'] ?? '',
+        'status' => $clockIn !== '' && $clockOut !== '' ? 'Complete' : 'Incomplete',
+    ];
+
+    ksort($records);
+    write_attendance($records);
+
+    return ['ok' => true, 'message' => 'Attendance record updated successfully.'];
+}
+
+function delete_attendance_record(string $date, string $employeeNumber): array
+{
+    $date = import_date_value($date);
+    $employeeNumber = normalize_employee_number($employeeNumber);
+    $records = read_attendance();
+
+    if ($date === '' || !isset($records[$date][$employeeNumber])) {
+        return ['ok' => false, 'message' => 'Attendance record was not found.'];
+    }
+
+    unset($records[$date][$employeeNumber]);
+
+    if (isset($records[$date]) && count($records[$date]) === 0) {
+        unset($records[$date]);
+    }
+
+    write_attendance($records);
+
+    return ['ok' => true, 'message' => 'Attendance record deleted successfully.'];
 }
 
 function save_clock_in_photo(string $photoData, string $employeeNumber, string $date, string $time = ''): string
@@ -264,6 +950,7 @@ function record_attendance_action(string $employeeNumber, string $action, string
     }
 
     $employeeName = $employee['employee_name'];
+    $position = $employee['position'] ?? '';
     $departmentId = $employee['department_id'] ?? '';
     $departmentName = $employee['department_name'] ?? 'Unassigned';
     $records = read_attendance();
@@ -279,6 +966,7 @@ function record_attendance_action(string $employeeNumber, string $action, string
         $records[$date][$employeeNumber] = [
             'employee_number' => $employeeNumber,
             'employee_name' => $employeeName,
+            'position' => $position,
             'department_id' => $departmentId,
             'department_name' => $departmentName,
             'date' => $date,
@@ -291,6 +979,7 @@ function record_attendance_action(string $employeeNumber, string $action, string
 
     $record = $records[$date][$employeeNumber];
     $record['employee_name'] = $employeeName;
+    $record['position'] = $position;
     $record['department_id'] = $departmentId;
     $record['department_name'] = $departmentName;
 
@@ -335,6 +1024,7 @@ function record_attendance_action(string $employeeNumber, string $action, string
         'body' => $body,
         'employee_number' => $employeeNumber,
         'employee_name' => $employeeName,
+        'position' => $position,
         'department_id' => $departmentId,
         'department_name' => $departmentName,
         'time' => $time,
@@ -408,6 +1098,10 @@ function attendance_for_date(string $date, string $departmentId = ''): array
             if (($record['department_id'] ?? '') === '') {
                 $dayRecords[$index]['department_id'] = $employees[$employeeNumber]['department_id'] ?? '';
                 $dayRecords[$index]['department_name'] = $employees[$employeeNumber]['department_name'] ?? 'Unassigned';
+            }
+
+            if (($record['position'] ?? '') === '') {
+                $dayRecords[$index]['position'] = $employees[$employeeNumber]['position'] ?? '';
             }
         }
     }

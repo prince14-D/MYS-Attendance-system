@@ -13,13 +13,36 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($adminAction === 'create_department') {
         $registrationResult = register_department($_POST['department_name'] ?? '');
+    } elseif ($adminAction === 'update_department') {
+        $registrationResult = update_department($_POST['department_id'] ?? '', $_POST['department_name'] ?? '');
+    } elseif ($adminAction === 'delete_department') {
+        $registrationResult = delete_department($_POST['department_id'] ?? '');
     } elseif ($adminAction === 'delete_employee') {
         $registrationResult = delete_employee($_POST['employee_number'] ?? '');
-    } else {
+    } elseif ($adminAction === 'import_employees') {
+        $registrationResult = import_employees_from_upload($_FILES['employee_file'] ?? []);
+    } elseif ($adminAction === 'import_attendance') {
+        $registrationResult = import_attendance_from_upload($_FILES['attendance_file'] ?? []);
+    } elseif ($adminAction === 'update_attendance') {
+        $registrationResult = update_attendance_record(
+            $_POST['original_date'] ?? '',
+            $_POST['original_employee_number'] ?? '',
+            $_POST['employee_number'] ?? '',
+            $_POST['employee_name'] ?? '',
+            $_POST['position'] ?? '',
+            $_POST['department_id'] ?? '',
+            $_POST['date'] ?? '',
+            $_POST['clock_in'] ?? '',
+            $_POST['clock_out'] ?? ''
+        );
+    } elseif ($adminAction === 'delete_attendance') {
+        $registrationResult = delete_attendance_record($_POST['date'] ?? '', $_POST['employee_number'] ?? '');
+    } elseif ($adminAction === 'register_employee') {
         $registrationResult = register_employee(
             $_POST['employee_number'] ?? '',
             $_POST['employee_name'] ?? '',
-            $_POST['department_id'] ?? ''
+            $_POST['department_id'] ?? '',
+            $_POST['position'] ?? ''
         );
     }
 }
@@ -96,16 +119,16 @@ if (!in_array($selectedDate, $dates, true)) {
                     </form>
                 </div>
 
+                <?php if ($registrationResult !== null): ?>
+                    <div class="alert <?= $registrationResult['ok'] ? 'success' : 'error' ?>">
+                        <?= h($registrationResult['message']) ?>
+                    </div>
+                <?php endif; ?>
+
                 <div class="admin-grid">
                     <section class="admin-box">
                         <h2>Create Department</h2>
                         <p class="muted">Create departments before assigning employees.</p>
-
-                        <?php if ($registrationResult !== null): ?>
-                            <div class="alert <?= $registrationResult['ok'] ? 'success' : 'error' ?>">
-                                <?= h($registrationResult['message']) ?>
-                            </div>
-                        <?php endif; ?>
 
                         <form method="post" class="stacked-form">
                             <input type="hidden" name="admin_action" value="create_department">
@@ -127,6 +150,9 @@ if (!in_array($selectedDate, $dates, true)) {
                             <label for="register_employee_name">Employee Name</label>
                             <input id="register_employee_name" name="employee_name" type="text" placeholder="Example: Mary Johnson" required>
 
+                            <label for="register_position">Position</label>
+                            <input id="register_position" name="position" type="text" placeholder="Example: Program Officer">
+
                             <label for="register_department_id">Department</label>
                             <select id="register_department_id" name="department_id" required>
                                 <option value="">Select Department</option>
@@ -140,6 +166,75 @@ if (!in_array($selectedDate, $dates, true)) {
                     </section>
 
                     <section class="admin-box">
+                        <h2>Import Employees</h2>
+                        <p class="muted">Upload Employee Number, Employee Name, Position, and Department columns.</p>
+
+                        <form method="post" enctype="multipart/form-data" class="stacked-form">
+                            <input type="hidden" name="admin_action" value="import_employees">
+                            <label for="employee_file">Employee Register</label>
+                            <input id="employee_file" name="employee_file" type="file" accept=".xlsx,.xls,.csv" required>
+                            <button class="button secondary full-button" type="submit">Import Employees</button>
+                        </form>
+                    </section>
+
+                    <section class="admin-box">
+                        <h2>Import Attendance</h2>
+                        <p class="muted">Upload Employee Number, Date, Position, Department, Clock In, and Clock Out columns.</p>
+
+                        <form method="post" enctype="multipart/form-data" class="stacked-form">
+                            <input type="hidden" name="admin_action" value="import_attendance">
+                            <label for="attendance_file">Excel Sheet</label>
+                            <input id="attendance_file" name="attendance_file" type="file" accept=".xlsx,.xls,.csv" required>
+                            <button class="button secondary full-button" type="submit">Import Records</button>
+                        </form>
+                    </section>
+
+                    <section class="admin-box wide-admin-box">
+                        <div class="toolbar compact-toolbar">
+                            <div>
+                                <h2>Departments</h2>
+                                <p class="muted"><?= count($departments) ?> department<?= count($departments) === 1 ? '' : 's' ?></p>
+                            </div>
+                        </div>
+
+                        <?php if (count($departments) === 0): ?>
+                            <div class="empty small-empty">No departments created yet.</div>
+                        <?php else: ?>
+                            <div class="mini-table-wrap">
+                                <table class="editable-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Department</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($departments as $department): ?>
+                                            <tr>
+                                                <td>
+                                                    <form method="post" class="row-form">
+                                                        <input type="hidden" name="admin_action" value="update_department">
+                                                        <input type="hidden" name="department_id" value="<?= h($department['department_id']) ?>">
+                                                        <input name="department_name" type="text" value="<?= h($department['department_name']) ?>" required>
+                                                        <button class="link-button small-button" type="submit">Save</button>
+                                                    </form>
+                                                </td>
+                                                <td>
+                                                    <form method="post" class="inline-form" onsubmit="return confirm('Delete this department? Assigned employees will become unassigned.');">
+                                                        <input type="hidden" name="admin_action" value="delete_department">
+                                                        <input type="hidden" name="department_id" value="<?= h($department['department_id']) ?>">
+                                                        <button class="link-button danger-link" type="submit">Delete</button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </section>
+
+                    <section class="admin-box wide-admin-box">
                         <div class="toolbar compact-toolbar">
                             <div>
                                 <h2>Registered Employees</h2>
@@ -156,6 +251,7 @@ if (!in_array($selectedDate, $dates, true)) {
                                         <tr>
                                             <th>Employee Number</th>
                                             <th>Name</th>
+                                            <th>Position</th>
                                             <th>Department</th>
                                             <th>Action</th>
                                         </tr>
@@ -163,15 +259,31 @@ if (!in_array($selectedDate, $dates, true)) {
                                     <tbody>
                                         <?php foreach ($employees as $employee): ?>
                                             <tr>
-                                                <td><?= h($employee['employee_number']) ?></td>
-                                                <td><?= h($employee['employee_name']) ?></td>
-                                                <td><?= h($employee['department_name'] ?? 'Unassigned') ?></td>
                                                 <td>
-                                                    <form method="post" class="inline-form" onsubmit="return confirm('Delete this employee? Attendance history will remain.');">
-                                                        <input type="hidden" name="admin_action" value="delete_employee">
-                                                        <input type="hidden" name="employee_number" value="<?= h($employee['employee_number']) ?>">
-                                                        <button class="link-button danger-link" type="submit">Delete</button>
+                                                    <form id="employee_<?= h($employee['employee_number']) ?>_edit" method="post" class="inline-form">
+                                                        <input type="hidden" name="admin_action" value="register_employee">
                                                     </form>
+                                                    <input form="employee_<?= h($employee['employee_number']) ?>_edit" name="employee_number" type="text" value="<?= h($employee['employee_number']) ?>" readonly>
+                                                </td>
+                                                <td><input form="employee_<?= h($employee['employee_number']) ?>_edit" name="employee_name" type="text" value="<?= h($employee['employee_name']) ?>" required></td>
+                                                <td><input form="employee_<?= h($employee['employee_number']) ?>_edit" name="position" type="text" value="<?= h($employee['position'] ?? '') ?>"></td>
+                                                <td>
+                                                    <select form="employee_<?= h($employee['employee_number']) ?>_edit" name="department_id">
+                                                        <option value="">Unassigned</option>
+                                                        <?php foreach ($departments as $department): ?>
+                                                            <option value="<?= h($department['department_id']) ?>" <?= ($employee['department_id'] ?? '') === $department['department_id'] ? 'selected' : '' ?>>
+                                                                <?= h($department['department_name']) ?>
+                                                            </option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                </td>
+                                                <td class="action-cell">
+                                                    <button form="employee_<?= h($employee['employee_number']) ?>_edit" class="link-button small-button" type="submit">Save</button>
+                                                <form method="post" class="inline-form" onsubmit="return confirm('Delete this employee? Attendance history will remain.');">
+                                                    <input type="hidden" name="admin_action" value="delete_employee">
+                                                    <input type="hidden" name="employee_number" value="<?= h($employee['employee_number']) ?>">
+                                                    <button class="link-button danger-link" type="submit">Delete</button>
+                                                </form>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -200,6 +312,7 @@ if (!in_array($selectedDate, $dates, true)) {
                                 <tr>
                                     <th>Employee Number</th>
                                     <th>Employee Name</th>
+                                    <th>Position</th>
                                     <th>Department</th>
                                     <th>Date</th>
                                     <th>Clock In</th>
@@ -207,16 +320,35 @@ if (!in_array($selectedDate, $dates, true)) {
                                     <th>Clock Out</th>
                                     <th>Worked Hours</th>
                                     <th>Status</th>
+                                    <th>Action</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php foreach ($records as $record): ?>
                                     <tr>
-                                        <td><?= h($record['employee_number']) ?></td>
-                                        <td><?= h($record['employee_name'] ?? '-') ?></td>
-                                        <td><?= h($record['department_name'] ?? 'Unassigned') ?></td>
-                                        <td><?= h($record['date']) ?></td>
-                                        <td><?= h($record['clock_in'] ?: '-') ?></td>
+                                        <?php $attendanceFormId = 'attendance_' . h($record['date']) . '_' . h($record['employee_number']); ?>
+                                        <td>
+                                            <form id="<?= $attendanceFormId ?>_edit" method="post" class="inline-form">
+                                                <input type="hidden" name="admin_action" value="update_attendance">
+                                                <input type="hidden" name="original_date" value="<?= h($record['date']) ?>">
+                                                <input type="hidden" name="original_employee_number" value="<?= h($record['employee_number']) ?>">
+                                            </form>
+                                            <input form="<?= $attendanceFormId ?>_edit" name="employee_number" type="text" value="<?= h($record['employee_number']) ?>" required>
+                                        </td>
+                                        <td><input form="<?= $attendanceFormId ?>_edit" name="employee_name" type="text" value="<?= h($record['employee_name'] ?? '') ?>" required></td>
+                                        <td><input form="<?= $attendanceFormId ?>_edit" name="position" type="text" value="<?= h($record['position'] ?? '') ?>"></td>
+                                        <td>
+                                            <select form="<?= $attendanceFormId ?>_edit" name="department_id">
+                                                <option value="">Unassigned</option>
+                                                <?php foreach ($departments as $department): ?>
+                                                    <option value="<?= h($department['department_id']) ?>" <?= ($record['department_id'] ?? '') === $department['department_id'] ? 'selected' : '' ?>>
+                                                        <?= h($department['department_name']) ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </td>
+                                        <td><input form="<?= $attendanceFormId ?>_edit" name="date" type="date" value="<?= h($record['date']) ?>" required></td>
+                                        <td><input form="<?= $attendanceFormId ?>_edit" name="clock_in" type="time" step="1" value="<?= h($record['clock_in'] ?? '') ?>"></td>
                                         <td>
                                             <?php if (($record['clock_in_photo'] ?? '') !== ''): ?>
                                                 <a class="photo-link" href="<?= h($record['clock_in_photo']) ?>" target="_blank" rel="noopener">
@@ -226,12 +358,21 @@ if (!in_array($selectedDate, $dates, true)) {
                                                 -
                                             <?php endif; ?>
                                         </td>
-                                        <td><?= h($record['clock_out'] ?: '-') ?></td>
+                                        <td><input form="<?= $attendanceFormId ?>_edit" name="clock_out" type="time" step="1" value="<?= h($record['clock_out'] ?? '') ?>"></td>
                                         <td><?= h(worked_hours($record) ?: '-') ?></td>
                                         <td>
                                             <span class="badge <?= $record['status'] === 'Complete' ? 'complete' : 'incomplete' ?>">
                                                 <?= h($record['status']) ?>
                                             </span>
+                                        </td>
+                                        <td class="action-cell">
+                                            <button form="<?= $attendanceFormId ?>_edit" class="link-button small-button" type="submit">Save</button>
+                                        <form method="post" class="inline-form" onsubmit="return confirm('Delete this attendance record?');">
+                                            <input type="hidden" name="admin_action" value="delete_attendance">
+                                            <input type="hidden" name="date" value="<?= h($record['date']) ?>">
+                                            <input type="hidden" name="employee_number" value="<?= h($record['employee_number']) ?>">
+                                            <button class="link-button danger-link" type="submit">Delete</button>
+                                        </form>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

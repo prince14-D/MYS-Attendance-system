@@ -1,1 +1,206 @@
-[]
+{
+    "minister-office": {
+        "department_id": "minister-office",
+        "department_name": "Minister Office",
+        "created_at": "2026-07-30 10:44:57",
+        "updated_at": "2026-07-30 10:44:57"
+    },
+    "dma-office": {
+        "department_id": "dma-office",
+        "department_name": "DMA OFFICE",
+        "created_at": "2026-07-30 11:19:46",
+        "updated_at": "2026-07-30 11:19:46"
+    },
+    "ama-office": {
+        "department_id": "ama-office",
+        "department_name": "AMA OFFICE",
+        "created_at": "2026-07-30 11:19:54",
+        "updated_at": "2026-07-30 11:19:54"
+    },
+    "dm-tvet": {
+        "department_id": "dm-tvet",
+        "department_name": "DM-TVET",
+        "created_at": "2026-07-30 11:20:28",
+        "updated_at": "2026-07-30 11:20:28"
+    },
+    "am-tvet": {
+        "department_id": "am-tvet",
+        "department_name": "AM-TVET",
+        "created_at": "2026-07-30 11:20:44",
+        "updated_at": "2026-07-30 11:20:44"
+    },
+    "dmtd-office": {
+        "department_id": "dmtd-office",
+        "department_name": "DMTD OFFICE",
+        "created_at": "2026-07-30 11:20:58",
+        "updated_at": "2026-07-30 11:20:58"
+    },
+    "dmyd-office": {
+        "department_id": "dmyd-office",
+        "department_name": "DMYD OFFICE",
+        "created_at": "2026-07-30 11:24:04",
+        "updated_at": "2026-07-30 11:24:04"
+    },
+    "amyd-office": {
+        "department_id": "amyd-office",
+        "department_name": "AMYD OFFICE",
+        "created_at": "2026-07-30 11:24:56",
+        "updated_at": "2026-07-30 11:24:56"
+    },
+    "dms-office": {
+        "department_id": "dms-office",
+        "department_name": "DMS OFFICE",
+        "created_at": "2026-07-30 11:25:07",
+        "updated_at": "2026-07-30 11:25:07"
+    },
+    "ams-office": {
+        "department_id": "ams-office",
+        "department_name": "AMS OFFICE",
+        "created_at": "2026-07-30 11:25:21",
+        "updated_at": "2026-07-30 11:25:21"
+    },
+    "human-resource-adm": {
+        "department_id": "human-resource-adm",
+        "department_name": "HUMAN RESOURCE-ADM",
+        "created_at": "2026-07-30 11:25:45",
+        "updated_at": "2026-07-30 11:25:45"
+    },
+    "finance": {
+        "department_id": "finance",
+        "department_name": "FINANCE",
+        "created_at": "2026-07-30 11:25:53",
+        "updated_at": "2026-07-30 11:25:53"
+    },
+    "procurement": {
+        "department_id": "procurement",
+        "department_name": "PROCUREMENT",
+        "created_at": "2026-07-30 11:26:03",
+        "updated_at": "2026-07-30 11:26:03"
+    },
+    "it-department": {
+        "department_id": "it-department",
+        "department_name": "IT DEPARTMENT",
+        "created_at": "2026-07-30 11:26:47",
+        "updated_at": "2026-07-30 11:26:47"
+    },
+    "public-affairs": {
+        "department_id": "public-affairs",
+        "department_name": "PUBLIC AFFAIRS",
+        "created_at": "2026-07-30 11:27:36",
+        "updated_at": "2026-07-30 11:27:36"
+    },
+    "asrh-program-at-risk-youth": {
+        "department_id": "asrh-program-at-risk-youth",
+        "department_name": "ASRH PROGRAM-AT RISK YOUTH",
+        "created_at": "2026-07-30 11:28:00",
+        "updated_at": "2026-07-30 11:28:00"
+    },
+    "ware-house-office": {
+        "department_id": "ware-house-office",
+        "department_name": "WARE HOUSE OFFICE",
+        "created_at": "2026-07-30 11:28:27",
+        "updated_at": "2026-07-30 11:28:27"
+    },
+    "asset-management": {
+        "department_id": "asset-management",
+        "department_name": "ASSET MANAGEMENT",
+        "created_at": "2026-07-30 11:28:38",
+        "updated_at": "2026-07-30 11:28:38"
+    },
+    "sports-bureau": {
+        "department_id": "sports-bureau",
+        "department_name": "SPORTS BUREAU",
+        "created_at": "2026-07-30 11:29:09",
+        "updated_at": "2026-07-30 11:29:09"
+    },
+    "internal-audit": {
+        "department_id": "internal-audit",
+        "department_name": "INTERNAL AUDIT",
+        "created_at": "2026-07-30 11:30:26",
+        "updated_at": "2026-07-30 11:30:26"
+    },
+    "monitoring-evalution": {
+        "department_id": "monitoring-evalution",
+        "department_name": "MONITORING & eVALUTION",
+        "created_at": "2026-07-30 11:30:55",
+        "updated_at": "2026-07-30 11:30:55"
+    },
+    "youth-bureau": {
+        "department_id": "youth-bureau",
+        "department_name": "YOUTH BUREAU",
+        "created_at": "2026-07-30 11:31:29",
+        "updated_at": "2026-07-30 11:31:29"
+    },
+    "gender-and-social-inclusion": {
+        "department_id": "gender-and-social-inclusion",
+        "department_name": "GENDER AND SOCIAL INCLUSION",
+        "created_at": "2026-07-30 11:32:49",
+        "updated_at": "2026-07-30 11:32:49"
+    },
+    "national-cadet-program": {
+        "department_id": "national-cadet-program",
+        "department_name": "NATIONAL CADET PROGRAM",
+        "created_at": "2026-07-30 11:33:08",
+        "updated_at": "2026-07-30 11:33:08"
+    },
+    "youth-conneck": {
+        "department_id": "youth-conneck",
+        "department_name": "YOUTH CONNECK",
+        "created_at": "2026-07-30 11:34:19",
+        "updated_at": "2026-07-30 11:34:19"
+    },
+    "project-delivery-unit": {
+        "department_id": "project-delivery-unit",
+        "department_name": "PROJECT DELIVERY UNIT",
+        "created_at": "2026-07-30 11:34:50",
+        "updated_at": "2026-07-30 11:34:50"
+    },
+    "studium-management": {
+        "department_id": "studium-management",
+        "department_name": "STUDIUM MANAGEMENT",
+        "created_at": "2026-07-30 11:35:07",
+        "updated_at": "2026-07-30 11:35:07"
+    },
+    "yojt-staff-s": {
+        "department_id": "yojt-staff-s",
+        "department_name": "YOJT STAFF'S",
+        "created_at": "2026-07-30 11:35:29",
+        "updated_at": "2026-07-30 11:35:29"
+    },
+    "m1-office-staff-s": {
+        "department_id": "m1-office-staff-s",
+        "department_name": "M1 OFFICE STAFF'S",
+        "created_at": "2026-07-30 11:36:28",
+        "updated_at": "2026-07-30 11:36:28"
+    },
+    "national-youth-pathway-program": {
+        "department_id": "national-youth-pathway-program",
+        "department_name": "NATIONAL YOUTH PATHWAY PROGRAM",
+        "created_at": "2026-07-30 11:39:07",
+        "updated_at": "2026-07-30 11:39:07"
+    },
+    "presidents-young-professional-program": {
+        "department_id": "presidents-young-professional-program",
+        "department_name": "PRESIDENTS YOUNG PROFESSIONAL PROGRAM",
+        "created_at": "2026-07-30 11:39:40",
+        "updated_at": "2026-07-30 11:39:40"
+    },
+    "m-e-procurement-and-revenue": {
+        "department_id": "m-e-procurement-and-revenue",
+        "department_name": "M&E-PROCUREMENT AND REVENUE",
+        "created_at": "2026-07-30 11:41:58",
+        "updated_at": "2026-07-30 11:41:58"
+    },
+    "mys-urban-montseraado": {
+        "department_id": "mys-urban-montseraado",
+        "department_name": "MYS URBAN MONTSERAADO",
+        "created_at": "2026-07-30 11:42:22",
+        "updated_at": "2026-07-30 12:02:23"
+    },
+    "budget": {
+        "department_id": "budget",
+        "department_name": "BUDGET",
+        "created_at": "2026-07-30 11:29:35",
+        "updated_at": "2026-07-30 16:21:49"
+    }
+}
