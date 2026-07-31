@@ -36,33 +36,23 @@ function export_rows(array $records, string $date, string $departmentName): arra
     $rows[] = [
         'Employee Number',
         'Employee Name',
-        'Position',
-        'Department',
-        'Date',
         'Clock In',
-        'Clock In Photo',
         'Clock Out',
-        'Worked Hours',
-        'Status',
+        'Hours Work',
     ];
 
     foreach ($records as $record) {
         $rows[] = [
             $record['employee_number'],
             $record['employee_name'] ?? '-',
-            $record['position'] ?? '-',
-            $record['department_name'] ?? 'Unassigned',
-            $record['date'],
             $record['clock_in'] ?: '-',
-            ($record['clock_in_photo'] ?? '') ?: '-',
             $record['clock_out'] ?: '-',
             worked_hours($record) ?: '-',
-            $record['status'],
         ];
     }
 
     if (count($records) === 0) {
-        $rows[] = ['No attendance records found for this date.', '', '', '', '', '', '', '', '', ''];
+        $rows[] = ['No attendance records found for this date.', '', '', '', ''];
     }
 
     return $rows;

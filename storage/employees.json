@@ -1,11 +1,92 @@
 {
-    "EMP001": {
-        "employee_number": "EMP001",
-        "employee_name": "Hamilton S. Fayiah",
-        "position": "HR Officer",
-        "department_id": "human-resource-adm",
-        "department_name": "HUMAN RESOURCE-ADM",
-        "registered_at": "2026-07-30 17:21:02",
-        "updated_at": "2026-07-30 17:21:02"
+    "64823": {
+        "employee_number": "64823",
+        "employee_name": "Koisay F.K Bolay",
+        "position": "Special Assistant",
+        "department_id": "minister-office",
+        "department_name": "Minister Office",
+        "registered_at": "2026-07-31 11:38:48",
+        "updated_at": "2026-07-31 11:38:48"
+    },
+    "421784": {
+        "employee_number": "421784",
+        "employee_name": "Teahdi L. Farcarthy Kekula",
+        "position": "Executive Secretary",
+        "department_id": "minister-office",
+        "department_name": "Minister Office",
+        "registered_at": "2026-07-31 11:45:33",
+        "updated_at": "2026-07-31 11:45:33"
+    },
+    "69947": {
+        "employee_number": "69947",
+        "employee_name": "Hannah Johnson",
+        "position": "Receptionist",
+        "department_id": "minister-office",
+        "department_name": "Minister Office",
+        "registered_at": "2026-07-31 11:49:10",
+        "updated_at": "2026-07-31 11:49:10"
+    },
+    "70158": {
+        "employee_number": "70158",
+        "employee_name": "Joseph B. Sackie",
+        "position": "Office Attendant",
+        "department_id": "dm-tvet",
+        "department_name": "DM-TVET",
+        "registered_at": "2026-07-31 12:41:32",
+        "updated_at": "2026-07-31 12:41:32"
+    },
+    "70165": {
+        "employee_number": "70165",
+        "employee_name": "Alieu L. Kemokia",
+        "position": "Director\/TVET",
+        "department_id": "am-tvet",
+        "department_name": "AM-TVET",
+        "registered_at": "2026-07-31 12:42:54",
+        "updated_at": "2026-07-31 12:42:54"
+    },
+    "69937": {
+        "employee_number": "69937",
+        "employee_name": "Wilfred S. K. Payne",
+        "position": "Administrative Assistant",
+        "department_id": "am-tvet",
+        "department_name": "AM-TVET",
+        "registered_at": "2026-07-31 12:43:47",
+        "updated_at": "2026-07-31 12:43:47"
+    },
+    "70026": {
+        "employee_number": "70026",
+        "employee_name": "Zizi E. Cyrus",
+        "position": "General Director\/TVET",
+        "department_id": "am-tvet",
+        "department_name": "AM-TVET",
+        "registered_at": "2026-07-31 12:44:51",
+        "updated_at": "2026-07-31 12:44:51"
+    },
+    "438373": {
+        "employee_number": "438373",
+        "employee_name": "Korvah Saygbe",
+        "position": "Office Assistant",
+        "department_id": "dmyd-office",
+        "department_name": "DMYD OFFICE",
+        "registered_at": "2026-07-31 12:46:29",
+        "updated_at": "2026-07-31 12:46:29"
+    },
+    "600137": {
+        "employee_number": "600137",
+        "employee_name": "Hannah B. Kpehe",
+        "position": "Office Attendant",
+        "department_id": "dmyd-office",
+        "department_name": "DMYD OFFICE",
+        "registered_at": "2026-07-31 12:47:34",
+        "updated_at": "2026-07-31 12:47:34"
+    },
+    "600143": {
+        "employee_number": "600143",
+        "employee_name": "Angeline D.S. Artis",
+        "position": "Office Assistant",
+        "department_id": "amyd-office",
+        "department_name": "AMYD OFFICE",
+        "registered_at": "2026-07-31 12:50:57",
+        "updated_at": "2026-07-31 12:50:57"
     }
 }
