@@ -88,5 +88,122 @@
         "department_name": "AMYD OFFICE",
         "registered_at": "2026-07-31 12:50:57",
         "updated_at": "2026-07-31 12:50:57"
+    },
+    "70065": {
+        "employee_number": "70065",
+        "employee_name": "Amos Kollie",
+        "position": "Office Attendant",
+        "department_id": "dms-office",
+        "department_name": "DMS OFFICE",
+        "registered_at": "2026-07-31 13:50:56",
+        "updated_at": "2026-07-31 13:50:56"
+    },
+    "70074": {
+        "employee_number": "70074",
+        "employee_name": "Grace Zammie",
+        "position": "Office Assistant",
+        "department_id": "ams-office",
+        "department_name": "AMS OFFICE",
+        "registered_at": "2026-07-31 13:53:09",
+        "updated_at": "2026-07-31 13:53:09"
+    },
+    "70081": {
+        "employee_number": "70081",
+        "employee_name": "Musu W. Mulbah",
+        "position": "Secretary to Director of Sports",
+        "department_id": "ams-office",
+        "department_name": "AMS OFFICE",
+        "registered_at": "2026-07-31 13:55:07",
+        "updated_at": "2026-07-31 13:55:07"
+    },
+    "70084": {
+        "employee_number": "70084",
+        "employee_name": "Francis T. Johnson",
+        "position": "Driver",
+        "department_id": "ams-office",
+        "department_name": "AMS OFFICE",
+        "registered_at": "2026-07-31 13:56:21",
+        "updated_at": "2026-07-31 13:56:21"
+    },
+    "69935": {
+        "employee_number": "69935",
+        "employee_name": "Antonia E. Okyne",
+        "position": "Personnel Analyst",
+        "department_id": "human-resource-adm",
+        "department_name": "HUMAN RESOURCE-ADM",
+        "registered_at": "2026-07-31 13:59:03",
+        "updated_at": "2026-07-31 13:59:03"
+    },
+    "69931": {
+        "employee_number": "69931",
+        "employee_name": "Prince Nyenon",
+        "position": "Assistant Director, Human Resources",
+        "department_id": "human-resource-adm",
+        "department_name": "HUMAN RESOURCE-ADM",
+        "registered_at": "2026-07-31 14:00:32",
+        "updated_at": "2026-07-31 14:00:32"
+    },
+    "69912": {
+        "employee_number": "69912",
+        "employee_name": "Diamond A. Karpteh",
+        "position": "HR Officer",
+        "department_id": "human-resource-adm",
+        "department_name": "HUMAN RESOURCE-ADM",
+        "registered_at": "2026-07-31 14:01:47",
+        "updated_at": "2026-07-31 14:01:47"
+    },
+    "69918": {
+        "employee_number": "69918",
+        "employee_name": "Victoria Nimely",
+        "position": "Secretary",
+        "department_id": "human-resource-adm",
+        "department_name": "HUMAN RESOURCE-ADM",
+        "registered_at": "2026-07-31 14:03:04",
+        "updated_at": "2026-07-31 14:03:04"
+    },
+    "69924": {
+        "employee_number": "69924",
+        "employee_name": "Kulah F. Freeman",
+        "position": "Office Assistant",
+        "department_id": "human-resource-adm",
+        "department_name": "HUMAN RESOURCE-ADM",
+        "registered_at": "2026-07-31 14:58:44",
+        "updated_at": "2026-07-31 14:58:44"
+    },
+    "69930": {
+        "employee_number": "69930",
+        "employee_name": "Grace Martin-Nayahway",
+        "position": "Director, Human Resources",
+        "department_id": "human-resource-adm",
+        "department_name": "HUMAN RESOURCE-ADM",
+        "registered_at": "2026-07-31 15:11:50",
+        "updated_at": "2026-07-31 15:11:50"
+    },
+    "69940": {
+        "employee_number": "69940",
+        "employee_name": "Moses D. Boe",
+        "position": "Human Resource Officer",
+        "department_id": "human-resource-adm",
+        "department_name": "HUMAN RESOURCE-ADM",
+        "registered_at": "2026-07-31 15:15:31",
+        "updated_at": "2026-07-31 15:15:31"
+    },
+    "79843": {
+        "employee_number": "79843",
+        "employee_name": "Alexander T.J Kamanda",
+        "position": "M&E OFFICER",
+        "department_id": "national-cadet-program",
+        "department_name": "NATIONAL CADET PROGRAM",
+        "registered_at": "2026-07-31 16:18:25",
+        "updated_at": "2026-07-31 16:18:25"
+    },
+    "436175": {
+        "employee_number": "436175",
+        "employee_name": "Mishell S. Feika",
+        "position": "Administrative Assistant",
+        "department_id": "amyd-office",
+        "department_name": "AMYD OFFICE",
+        "registered_at": "2026-07-31 16:27:39",
+        "updated_at": "2026-07-31 16:27:39"
     }
 }
