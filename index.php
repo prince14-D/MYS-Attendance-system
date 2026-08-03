@@ -32,7 +32,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <body>
     <main class="page">
         <header class="topbar">
-            <div class="brand"><?= h(APP_NAME) ?></div>
+            <div class="brand-lockup">
+                <img class="brand-mark" src="assets/app-icon.svg" alt="" aria-hidden="true">
+                <div>
+                    <div class="brand-kicker">Ministry of Youth & Sports</div>
+                    <div class="brand"><?= h(APP_NAME) ?></div>
+                </div>
+            </div>
             <nav class="nav-links" aria-label="Main navigation">
                 <a href="admin.php">Admin Login</a>
             </nav>

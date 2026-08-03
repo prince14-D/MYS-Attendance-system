@@ -205,5 +205,131 @@
         "department_name": "AMYD OFFICE",
         "registered_at": "2026-07-31 16:27:39",
         "updated_at": "2026-07-31 16:27:39"
+    },
+    "70061": {
+        "employee_number": "70061",
+        "employee_name": "Abubakar Fofana",
+        "position": "Administrative Assistant",
+        "department_id": "ama-office",
+        "department_name": "AMA OFFICE",
+        "registered_at": "2026-08-03 10:46:14",
+        "updated_at": "2026-08-03 10:46:14"
+    },
+    "800045": {
+        "employee_number": "800045",
+        "employee_name": "Kulah F. Freeman",
+        "position": "Office Assistant",
+        "department_id": "ama-office",
+        "department_name": "AMA OFFICE",
+        "registered_at": "2026-08-03 12:19:22",
+        "updated_at": "2026-08-03 12:19:22"
+    },
+    "70163": {
+        "employee_number": "70163",
+        "employee_name": "Francis T. Johnson",
+        "position": "Driver",
+        "department_id": "ams-office",
+        "department_name": "AMS OFFICE",
+        "registered_at": "2026-08-03 12:20:25",
+        "updated_at": "2026-08-03 12:20:25"
+    },
+    "69989": {
+        "employee_number": "69989",
+        "employee_name": "Polin D. Faley",
+        "position": "Finance Assistant",
+        "department_id": "finance",
+        "department_name": "FINANCE",
+        "registered_at": "2026-08-03 12:21:57",
+        "updated_at": "2026-08-03 12:21:57"
+    },
+    "70031": {
+        "employee_number": "70031",
+        "employee_name": "D. Joshua Garway",
+        "position": "Assistant Expeditor",
+        "department_id": "finance",
+        "department_name": "FINANCE",
+        "registered_at": "2026-08-03 12:23:09",
+        "updated_at": "2026-08-03 12:23:09"
+    },
+    "70115": {
+        "employee_number": "70115",
+        "employee_name": "Koiyan C. Kollie",
+        "position": "Procurement Officer",
+        "department_id": "procurement",
+        "department_name": "PROCUREMENT",
+        "registered_at": "2026-08-03 12:24:43",
+        "updated_at": "2026-08-03 12:24:43"
+    },
+    "70017": {
+        "employee_number": "70017",
+        "employee_name": "Saah Wawoh",
+        "position": "Carpenter",
+        "department_id": "asset-management",
+        "department_name": "ASSET MANAGEMENT",
+        "registered_at": "2026-08-03 12:26:11",
+        "updated_at": "2026-08-03 12:26:11"
+    },
+    "69891": {
+        "employee_number": "69891",
+        "employee_name": "Vestor Nagbe",
+        "position": "Generator Operator",
+        "department_id": "asset-management",
+        "department_name": "ASSET MANAGEMENT",
+        "registered_at": "2026-08-03 12:27:09",
+        "updated_at": "2026-08-03 12:27:09"
+    },
+    "70172": {
+        "employee_number": "70172",
+        "employee_name": "Christopher John Zeoh",
+        "position": "Generator Operator",
+        "department_id": "asset-management",
+        "department_name": "ASSET MANAGEMENT",
+        "registered_at": "2026-08-03 12:28:16",
+        "updated_at": "2026-08-03 12:28:16"
+    },
+    "70103": {
+        "employee_number": "70103",
+        "employee_name": "James W.K Vincent",
+        "position": "Plumber",
+        "department_id": "asset-management",
+        "department_name": "ASSET MANAGEMENT",
+        "registered_at": "2026-08-03 12:41:18",
+        "updated_at": "2026-08-03 12:41:18"
+    },
+    "69928": {
+        "employee_number": "69928",
+        "employee_name": "Eric Dennis",
+        "position": "Plumber\/supervisor",
+        "department_id": "asset-management",
+        "department_name": "ASSET MANAGEMENT",
+        "registered_at": "2026-08-03 12:56:17",
+        "updated_at": "2026-08-03 12:56:17"
+    },
+    "70161": {
+        "employee_number": "70161",
+        "employee_name": "Jacob B. Gray",
+        "position": "Driver",
+        "department_id": "asset-management",
+        "department_name": "ASSET MANAGEMENT",
+        "registered_at": "2026-08-03 13:05:19",
+        "updated_at": "2026-08-03 13:05:19"
+    },
+    "102155": {
+        "employee_number": "102155",
+        "employee_name": "Solomon M. Jackson",
+        "position": "Driver",
+        "department_id": "asset-management",
+        "department_name": "ASSET MANAGEMENT",
+        "registered_at": "2026-08-03 13:07:34",
+        "updated_at": "2026-08-03 13:07:34"
+    },
+    "70014": {
+        "employee_number": "70014",
+        "employee_name": "Samuel Wleh",
+        "position": "Driver",
+        "department_id": "asset-management",
+        "department_name": "ASSET MANAGEMENT",
+        "registered_at": "2026-08-03 13:09:09",
+        "updated_at": "2026-08-03 13:25:54"
     }
 }

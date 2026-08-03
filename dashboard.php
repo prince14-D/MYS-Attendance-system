@@ -64,6 +64,75 @@ $records = attendance_for_date($selectedDate, $selectedDepartment);
 $dates = all_attendance_dates();
 $employees = all_employees();
 $departments = all_departments();
+$totalWorkedMinutes = 0;
+$completeWorkedMinutes = 0;
+
+foreach ($records as $record) {
+    $worked = worked_hours($record);
+
+    if ($worked === '') {
+        continue;
+    }
+
+    [$hours, $minutes] = array_map('intval', explode(':', $worked));
+    $minutesWorked = ($hours * 60) + $minutes;
+    $totalWorkedMinutes += $minutesWorked;
+
+    if (($record['status'] ?? '') === 'Complete') {
+        $completeWorkedMinutes += $minutesWorked;
+    }
+}
+
+$completeRecords = count(array_filter($records, static fn (array $record): bool => ($record['status'] ?? '') === 'Complete'));
+$incompleteRecords = count($records) - $completeRecords;
+$clockedInRecords = count(array_filter($records, static fn (array $record): bool => ($record['clock_in'] ?? '') !== ''));
+$activeFilterLabel = $selectedDepartmentData['department_name'] ?? 'All Departments';
+$employeesByNumber = [];
+
+foreach ($employees as $employee) {
+    $employeeNumber = normalize_employee_number((string) ($employee['employee_number'] ?? ''));
+
+    if ($employeeNumber !== '') {
+        $employeesByNumber[$employeeNumber] = $employee;
+    }
+}
+
+$printRecordGroups = [];
+
+foreach ($records as $record) {
+    $employeeNumber = normalize_employee_number((string) ($record['employee_number'] ?? ''));
+    $employee = $employeeNumber !== '' ? ($employeesByNumber[$employeeNumber] ?? null) : null;
+    $departmentName = trim((string) ($record['department_name'] ?? ($employee['department_name'] ?? 'Unassigned')));
+
+    if ($departmentName === '') {
+        $departmentName = 'Unassigned';
+    }
+
+    $printRecordGroups[$departmentName][] = [
+        'employee_number' => $employeeNumber !== '' ? $employeeNumber : '-',
+        'employee_name' => trim((string) ($record['employee_name'] ?? ($employee['employee_name'] ?? ''))),
+        'clock_in' => (string) ($record['clock_in'] ?? ''),
+        'clock_out' => (string) ($record['clock_out'] ?? ''),
+        'worked_hours' => worked_hours($record),
+        'status' => (string) ($record['status'] ?? 'Pending'),
+        'department_name' => $departmentName,
+    ];
+}
+
+$averageWorkedMinutes = $completeRecords > 0 ? (int) floor($completeWorkedMinutes / $completeRecords) : 0;
+
+$formatWorkedMinutes = static function (int $minutes): string {
+    if ($minutes <= 0) {
+        return '00:00';
+    }
+
+    $hours = intdiv($minutes, 60);
+    $remainingMinutes = $minutes % 60;
+
+    return sprintf('%02d:%02d', $hours, $remainingMinutes);
+};
+
+$profileReviews = array_slice($records, 0, 12);
 
 if (!in_array($selectedDate, $dates, true)) {
     array_unshift($dates, $selectedDate);
@@ -78,52 +147,162 @@ if (!in_array($selectedDate, $dates, true)) {
     <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body>
+    
     <main class="page">
         <header class="topbar">
-            <div class="brand"><?= h(APP_NAME) ?></div>
+            <div class="brand-lockup">
+                <img class="brand-mark" src="assets/app-icon.svg" alt="" aria-hidden="true">
+                <div>
+                    <div class="brand-kicker">Ministry of Youth & Sports</div>
+                    <div class="brand"><?= h(APP_NAME) ?></div>
+                </div>
+            </div>
             <nav class="nav-links" aria-label="Main navigation">
                 <a href="index.php">Clock Screen</a>
                 <a href="logout.php">Logout</a>
             </nav>
         </header>
 
-        <section class="content">
-            <div class="panel">
-                <div class="toolbar">
-                    <div>
-                        <h1>Daily Attendance</h1>
-                        <p class="muted">
-                            Records for <?= h($selectedDate) ?>
-                            <?= $selectedDepartmentData ? ' - ' . h($selectedDepartmentData['department_name']) : '' ?>
-                        </p>
-                    </div>
-
-                    <form method="get">
-                        <div>
-                            <label for="date">Date</label>
-                            <input id="date" name="date" type="date" value="<?= h($selectedDate) ?>">
-                        </div>
-                        <div>
-                            <label for="department">Department</label>
-                            <select id="department" name="department">
-                                <option value="">All Departments</option>
-                                <?php foreach ($departments as $department): ?>
-                                    <option value="<?= h($department['department_id']) ?>" <?= $selectedDepartment === $department['department_id'] ? 'selected' : '' ?>>
-                                        <?= h($department['department_name']) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <button class="button primary" type="submit">View</button>
-                        <button class="button secondary" type="button" onclick="window.print()">Print</button>
-                    </form>
+        <section class="content admin-dashboard">
+            <div class="dashboard-hero panel">
+                <div class="dashboard-title">
+                    <span class="eyebrow">Admin Dashboard</span>
+                    <h1>Daily Attendance</h1>
+                    <p class="muted">
+                        Viewing <?= h($activeFilterLabel) ?> for <?= h($selectedDate) ?>.
+                    </p>
                 </div>
 
-                <?php if ($registrationResult !== null): ?>
-                    <div class="alert <?= $registrationResult['ok'] ? 'success' : 'error' ?>">
-                        <?= h($registrationResult['message']) ?>
+                <form method="get" class="filter-panel">
+                    <div>
+                        <label for="date">Date</label>
+                        <input id="date" name="date" type="date" value="<?= h($selectedDate) ?>">
                     </div>
+                    <div>
+                        <label for="department">Department</label>
+                        <select id="department" name="department">
+                            <option value="">All Departments</option>
+                            <?php foreach ($departments as $department): ?>
+                                <option value="<?= h($department['department_id']) ?>" <?= $selectedDepartment === $department['department_id'] ? 'selected' : '' ?>>
+                                    <?= h($department['department_name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <button class="button primary" type="submit">View</button>
+                    <button class="button secondary" type="button" onclick="window.print()">Print</button>
+                </form>
+            </div>
+
+            <div class="stats-grid" aria-label="Attendance summary">
+                <div class="stat-card">
+                    <span>Today Records</span>
+                    <strong><?= count($records) ?></strong>
+                    <small><?= h($activeFilterLabel) ?></small>
+                </div>
+                <div class="stat-card">
+                    <span>Clocked In</span>
+                    <strong><?= $clockedInRecords ?></strong>
+                    <small><?= count($employees) ?> registered employees</small>
+                </div>
+                <div class="stat-card">
+                    <span>Complete</span>
+                    <strong><?= $completeRecords ?></strong>
+                    <small><?= $incompleteRecords ?> incomplete</small>
+                </div>
+                <div class="stat-card">
+                    <span>Total Worked</span>
+                    <strong><?= h($formatWorkedMinutes($totalWorkedMinutes)) ?></strong>
+                    <small>Across today's records</small>
+                </div>
+                <div class="stat-card">
+                    <span>Average Time</span>
+                    <strong><?= h($formatWorkedMinutes($averageWorkedMinutes)) ?></strong>
+                    <small>Per completed shift</small>
+                </div>
+                <div class="stat-card">
+                    <span>Departments</span>
+                    <strong><?= count($departments) ?></strong>
+                    <small>Available filters</small>
+                </div>
+            </div>
+
+            <?php if ($registrationResult !== null): ?>
+                <div class="alert <?= $registrationResult['ok'] ? 'success' : 'error' ?>">
+                    <?= h($registrationResult['message']) ?>
+                </div>
+            <?php endif; ?>
+
+            <section class="print-report" aria-label="Printable attendance report">
+                <div class="print-report-header">
+                    <div>
+                        <span class="eyebrow">Printable Report</span>
+                        <h2><?= h(APP_NAME) ?></h2>
+                        <p>Attendance for <?= h($selectedDate) ?> - <?= h($activeFilterLabel) ?></p>
+                    </div>
+                    <div class="print-report-meta">
+                        <div>
+                            <span>Date</span>
+                            <strong><?= h($selectedDate) ?></strong>
+                        </div>
+                        <div>
+                            <span>Department</span>
+                            <strong><?= h($activeFilterLabel) ?></strong>
+                        </div>
+                        <div>
+                            <span>Total Records</span>
+                            <strong><?= count($records) ?></strong>
+                        </div>
+                    </div>
+                </div>
+
+                <?php if (count($records) === 0): ?>
+                    <div class="empty">No attendance records found for this date.</div>
+                <?php else: ?>
+                    <?php foreach ($printRecordGroups as $departmentName => $departmentRecords): ?>
+                        <section class="print-department-block">
+                            <div class="print-department-heading">
+                                <h3><?= h($departmentName) ?></h3>
+                                <span><?= count($departmentRecords) ?> record<?= count($departmentRecords) === 1 ? '' : 's' ?></span>
+                            </div>
+
+                            <table class="print-table">
+                                <thead>
+                                    <tr>
+                                        <th>Employee Number</th>
+                                        <th>Employee Name</th>
+                                        <th>Clock In</th>
+                                        <th>Clock Out</th>
+                                        <th>Worked Hours</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($departmentRecords as $record): ?>
+                                        <tr>
+                                            <td><?= h($record['employee_number']) ?></td>
+                                            <td><?= h($record['employee_name'] !== '' ? $record['employee_name'] : '-') ?></td>
+                                            <td><?= h($record['clock_in'] !== '' ? $record['clock_in'] : '-') ?></td>
+                                            <td><?= h($record['clock_out'] !== '' ? $record['clock_out'] : '-') ?></td>
+                                            <td><?= h($record['worked_hours'] !== '' ? $record['worked_hours'] : '-') ?></td>
+                                            <td><?= h($record['status']) ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </section>
+                    <?php endforeach; ?>
                 <?php endif; ?>
+            </section>
+
+            <div class="dashboard-section">
+                <div class="section-heading">
+                    <div>
+                        <span class="eyebrow">Setup</span>
+                        <h2>Directory Management</h2>
+                    </div>
+                    <p class="muted">Create departments, register employees, and import lists.</p>
+                </div>
 
                 <div class="admin-grid">
                     <section class="admin-box">
@@ -138,7 +317,7 @@ if (!in_array($selectedDate, $dates, true)) {
                         </form>
                     </section>
 
-                    <section class="admin-box">
+                    <section class="admin-box primary-admin-box">
                         <h2>Register Employee</h2>
                         <p class="muted">Add the employee name and number before they use the clock screen.</p>
 
@@ -165,7 +344,7 @@ if (!in_array($selectedDate, $dates, true)) {
                         </form>
                     </section>
 
-                    <section class="admin-box">
+                    <section class="admin-box import-box">
                         <h2>Import Employees</h2>
                         <p class="muted">Upload Employee Number, Employee Name, Position, and Department columns.</p>
 
@@ -177,7 +356,7 @@ if (!in_array($selectedDate, $dates, true)) {
                         </form>
                     </section>
 
-                    <section class="admin-box">
+                    <section class="admin-box import-box">
                         <h2>Import Attendance</h2>
                         <p class="muted">Upload Employee Number, Date, Position, Department, Clock In, and Clock Out columns.</p>
 
@@ -188,11 +367,16 @@ if (!in_array($selectedDate, $dates, true)) {
                             <button class="button secondary full-button" type="submit">Import Records</button>
                         </form>
                     </section>
+                </div>
+            </div>
 
+            <div class="dashboard-section">
+                <div class="admin-grid directory-grid">
                     <section class="admin-box wide-admin-box">
                         <div class="toolbar compact-toolbar">
                             <div>
-                                <h2>Departments</h2>
+                                <span class="eyebrow">Departments</span>
+                                <h2>Department List</h2>
                                 <p class="muted"><?= count($departments) ?> department<?= count($departments) === 1 ? '' : 's' ?></p>
                             </div>
                         </div>
@@ -234,9 +418,10 @@ if (!in_array($selectedDate, $dates, true)) {
                         <?php endif; ?>
                     </section>
 
-                    <section class="admin-box wide-admin-box">
+                    <section class="admin-box wide-admin-box employees-box">
                         <div class="toolbar compact-toolbar">
                             <div>
+                                <span class="eyebrow">Employees</span>
                                 <h2>Registered Employees</h2>
                                 <p class="muted"><?= count($employees) ?> employee<?= count($employees) === 1 ? '' : 's' ?></p>
                             </div>
@@ -293,9 +478,79 @@ if (!in_array($selectedDate, $dates, true)) {
                         <?php endif; ?>
                     </section>
                 </div>
+            </div>
 
-                <div class="toolbar">
-                    <div class="muted"><?= count($records) ?> employee record<?= count($records) === 1 ? '' : 's' ?></div>
+            <div class="dashboard-section">
+                <div class="section-heading">
+                    <div>
+                        <span class="eyebrow">Review</span>
+                        <h2>Clock-In Profiles</h2>
+                    </div>
+                    <p class="muted">Each employee card shows the profile, clock-in time, and worked hours for the selected day.</p>
+                </div>
+
+                <?php if (count($profileReviews) === 0): ?>
+                    <div class="empty">No attendance records found for this date.</div>
+                <?php else: ?>
+                    <div class="profile-grid">
+                        <?php foreach ($profileReviews as $record): ?>
+                            <?php
+                                $employeeName = $record['employee_name'] ?? 'Unknown Employee';
+                                $employeeNumber = $record['employee_number'] ?? '-';
+                                $departmentName = $record['department_name'] ?? 'Unassigned';
+                                $workedHours = worked_hours($record) ?: '00:00';
+                                $initials = strtoupper(substr($employeeName, 0, 1) . substr(trim(strrchr($employeeName, ' ') ?: $employeeName), 0, 1));
+                            ?>
+                            <article class="profile-card">
+                                <div class="profile-head">
+                                    <div class="profile-avatar">
+                                        <?php if (($record['clock_in_photo'] ?? '') !== ''): ?>
+                                            <img src="<?= h($record['clock_in_photo']) ?>" alt="Clock-in photo for <?= h($employeeNumber) ?>">
+                                        <?php else: ?>
+                                            <span><?= h($initials !== '' ? $initials : 'NA') ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div>
+                                        <strong><?= h($employeeName) ?></strong>
+                                        <p><?= h($employeeNumber) ?></p>
+                                    </div>
+                                </div>
+
+                                <dl class="profile-metrics">
+                                    <div>
+                                        <dt>Department</dt>
+                                        <dd><?= h($departmentName) ?></dd>
+                                    </div>
+                                    <div>
+                                        <dt>Clock In</dt>
+                                        <dd><?= h($record['clock_in'] ?: '-') ?></dd>
+                                    </div>
+                                    <div>
+                                        <dt>Clock Out</dt>
+                                        <dd><?= h($record['clock_out'] ?: '-') ?></dd>
+                                    </div>
+                                    <div>
+                                        <dt>Worked Time</dt>
+                                        <dd><?= h($workedHours) ?></dd>
+                                    </div>
+                                </dl>
+
+                                <span class="badge <?= ($record['status'] ?? '') === 'Complete' ? 'complete' : 'incomplete' ?>">
+                                    <?= h($record['status'] ?? 'Pending') ?>
+                                </span>
+                            </article>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <div class="records-panel panel">
+                <div class="toolbar records-toolbar">
+                    <div>
+                        <span class="eyebrow">Records</span>
+                        <h2>Attendance Log</h2>
+                        <p class="muted"><?= count($records) ?> employee record<?= count($records) === 1 ? '' : 's' ?> for <?= h($selectedDate) ?></p>
+                    </div>
                     <div class="export-links">
                         <a class="link-button" href="export.php?format=csv&date=<?= h(urlencode($selectedDate)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">CSV</a>
                         <a class="link-button" href="export.php?format=xls&date=<?= h(urlencode($selectedDate)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">Excel</a>
