@@ -61,7 +61,7 @@ function export_rows(array $records, string $date, string $departmentName): arra
         'Department',
         'Clock In',
         'Clock Out',
-        'Hours Work',
+        'Worked Hours',
         'Status',
     ];
 
@@ -109,16 +109,59 @@ function download_xls(array $rows, string $date): never
     header('Content-Type: application/vnd.ms-excel; charset=utf-8');
     header('Content-Disposition: attachment; filename="attendance-' . $date . '.xls"');
 
+    $columnCount = 9;
+
     echo "\xEF\xBB\xBF";
-    echo '<html><head><meta charset="utf-8"></head><body>';
-    echo '<table border="1">';
+    echo '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">';
+    echo '<head><meta charset="utf-8">';
+    echo '<style>';
+    echo '@page{mso-page-orientation:landscape;size:landscape;margin:.35in .25in .35in .25in;}';
+    echo 'body{font-family:Arial,Helvetica,sans-serif;color:#111827;}';
+    echo 'table{border-collapse:collapse;width:100%;}';
+    echo 'th,td{border:1px solid #b9c7d8;padding:7px 9px;font-size:11pt;vertical-align:middle;mso-number-format:"\\@";}';
+    echo '.title th{background:#123f7a;color:#ffffff;font-size:16pt;text-align:left;padding:12px 10px;}';
+    echo '.subtitle th{background:#eaf1fb;color:#123f7a;text-align:left;font-size:12pt;}';
+    echo '.meta th{background:#f5f7fb;color:#40504b;text-align:left;font-weight:700;}';
+    echo '.spacer td{border:0;height:10px;}';
+    echo '.header th{background:#c81e32;color:#ffffff;text-align:left;}';
+    echo '.empty td{text-align:center;color:#61708a;font-style:italic;}';
+    echo '</style>';
+    echo '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Attendance</x:Name><x:WorksheetOptions><x:PageSetup><x:Layout x:Orientation="Landscape"/></x:PageSetup><x:FitToPage/><x:Print><x:FitWidth>1</x:FitWidth><x:FitHeight>0</x:FitHeight></x:Print><x:FreezePanes/><x:FrozenNoSplit/><x:SplitHorizontal>6</x:SplitHorizontal><x:TopRowBottomPane>6</x:TopRowBottomPane><x:ActivePane>2</x:ActivePane></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->';
+    echo '</head><body>';
+    echo '<table>';
+    echo '<colgroup>';
+    echo '<col style="width:95px"><col style="width:135px"><col style="width:220px"><col style="width:190px"><col style="width:190px"><col style="width:95px"><col style="width:95px"><col style="width:100px"><col style="width:95px">';
+    echo '</colgroup>';
 
     foreach ($rows as $index => $row) {
-        echo '<tr>';
+        if ($index === 0) {
+            echo '<tr class="title"><th colspan="' . $columnCount . '">' . h((string) ($row[0] ?? '')) . '</th></tr>';
+            continue;
+        }
+
+        if ($index === 1) {
+            echo '<tr class="subtitle"><th colspan="' . $columnCount . '">' . h((string) ($row[0] ?? '')) . '</th></tr>';
+            continue;
+        }
+
+        if ($index === 2 || $index === 3) {
+            echo '<tr class="meta"><th colspan="' . $columnCount . '">' . h((string) ($row[0] ?? '')) . '</th></tr>';
+            continue;
+        }
+
+        if ($index === 4) {
+            echo '<tr class="spacer"><td colspan="' . $columnCount . '"></td></tr>';
+            continue;
+        }
+
+        $rowClass = $index === 5 ? ' class="header"' : (str_starts_with((string) ($row[0] ?? ''), 'No attendance records') ? ' class="empty"' : '');
+        $tag = $index === 5 ? 'th' : 'td';
+        echo '<tr' . $rowClass . '>';
+
         foreach ($row as $cell) {
-            $tag = $index < 6 ? 'th' : 'td';
             echo '<' . $tag . '>' . h((string) $cell) . '</' . $tag . '>';
         }
+
         echo '</tr>';
     }
 

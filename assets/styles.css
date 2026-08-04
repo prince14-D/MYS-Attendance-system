@@ -919,7 +919,8 @@ tbody tr:hover {
     background: #fbfdff;
 }
 
-.print-report {
+.print-report,
+.employee-print-report {
     display: none;
 }
 
@@ -1153,6 +1154,11 @@ tbody tr:hover {
 }
 
 @media print {
+    @page {
+        size: landscape;
+        margin: 0.35in;
+    }
+
     body {
         background: #ffffff;
         color: #000000;
@@ -1181,9 +1187,19 @@ tbody tr:hover {
         padding: 0;
     }
 
-    .print-report {
+    body[data-print-mode="attendance"] .print-report,
+    body:not([data-print-mode]) .print-report {
         display: block;
         padding: 0;
+    }
+
+    body[data-print-mode="employees"] .employee-print-report {
+        display: block;
+        padding: 0;
+    }
+
+    body[data-print-mode="employees"] .print-report {
+        display: none;
     }
 
     .print-report-header {
@@ -1278,6 +1294,26 @@ tbody tr:hover {
 
     .print-table td {
         background: #ffffff;
+    }
+
+    .employee-directory-print-table {
+        font-size: 10px;
+    }
+
+    .employee-directory-print-table th:first-child,
+    .employee-directory-print-table td:first-child {
+        text-align: right;
+        width: 34px;
+    }
+
+    .employee-directory-print-table th:nth-child(2),
+    .employee-directory-print-table td:nth-child(2) {
+        width: 125px;
+    }
+
+    .employee-directory-print-table th:nth-child(3),
+    .employee-directory-print-table td:nth-child(3) {
+        width: 265px;
     }
 
     .toolbar {

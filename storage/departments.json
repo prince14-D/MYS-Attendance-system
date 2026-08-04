@@ -3,31 +3,31 @@
         "department_id": "minister-office",
         "department_name": "Minister Office",
         "created_at": "2026-07-30 10:44:57",
-        "updated_at": "2026-07-30 10:44:57"
+        "updated_at": "2026-08-04 11:36:30"
     },
     "dma-office": {
         "department_id": "dma-office",
         "department_name": "DMA OFFICE",
         "created_at": "2026-07-30 11:19:46",
-        "updated_at": "2026-07-30 11:19:46"
+        "updated_at": "2026-08-04 11:36:30"
     },
     "ama-office": {
         "department_id": "ama-office",
         "department_name": "AMA OFFICE",
         "created_at": "2026-07-30 11:19:54",
-        "updated_at": "2026-07-30 11:19:54"
+        "updated_at": "2026-08-04 11:36:30"
     },
     "dm-tvet": {
         "department_id": "dm-tvet",
         "department_name": "DM-TVET",
         "created_at": "2026-07-30 11:20:28",
-        "updated_at": "2026-07-30 11:20:28"
+        "updated_at": "2026-08-04 11:36:30"
     },
     "am-tvet": {
         "department_id": "am-tvet",
         "department_name": "AM-TVET",
         "created_at": "2026-07-30 11:20:44",
-        "updated_at": "2026-07-30 11:20:44"
+        "updated_at": "2026-08-04 11:36:30"
     },
     "dmtd-office": {
         "department_id": "dmtd-office",
@@ -39,31 +39,31 @@
         "department_id": "dmyd-office",
         "department_name": "DMYD OFFICE",
         "created_at": "2026-07-30 11:24:04",
-        "updated_at": "2026-07-30 11:24:04"
+        "updated_at": "2026-08-04 11:36:30"
     },
     "amyd-office": {
         "department_id": "amyd-office",
         "department_name": "AMYD OFFICE",
         "created_at": "2026-07-30 11:24:56",
-        "updated_at": "2026-07-30 11:24:56"
+        "updated_at": "2026-08-04 11:36:30"
     },
     "dms-office": {
         "department_id": "dms-office",
         "department_name": "DMS OFFICE",
         "created_at": "2026-07-30 11:25:07",
-        "updated_at": "2026-07-30 11:25:07"
+        "updated_at": "2026-08-04 11:36:30"
     },
     "ams-office": {
         "department_id": "ams-office",
         "department_name": "AMS OFFICE",
         "created_at": "2026-07-30 11:25:21",
-        "updated_at": "2026-07-30 11:25:21"
+        "updated_at": "2026-08-04 11:36:30"
     },
     "human-resource-adm": {
         "department_id": "human-resource-adm",
         "department_name": "HUMAN RESOURCE-ADM",
         "created_at": "2026-07-30 11:25:45",
-        "updated_at": "2026-07-30 11:25:45"
+        "updated_at": "2026-08-04 11:36:30"
     },
     "finance": {
         "department_id": "finance",

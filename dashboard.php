@@ -19,6 +19,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $registrationResult = delete_department($_POST['department_id'] ?? '');
     } elseif ($adminAction === 'delete_employee') {
         $registrationResult = delete_employee($_POST['employee_number'] ?? '');
+    } elseif ($adminAction === 'update_employee') {
+        $registrationResult = update_employee_record(
+            $_POST['original_employee_number'] ?? '',
+            $_POST['employee_number'] ?? '',
+            $_POST['employee_name'] ?? '',
+            $_POST['department_id'] ?? '',
+            $_POST['position'] ?? ''
+        );
     } elseif ($adminAction === 'import_employees') {
         $registrationResult = import_employees_from_upload($_FILES['employee_file'] ?? []);
     } elseif ($adminAction === 'import_attendance') {
@@ -190,7 +198,7 @@ if (!in_array($selectedDate, $dates, true)) {
                         </select>
                     </div>
                     <button class="button primary" type="submit">View</button>
-                    <button class="button secondary" type="button" onclick="window.print()">Print</button>
+                    <button class="button secondary" type="button" data-print-mode="attendance">Print</button>
                 </form>
             </div>
 
@@ -292,6 +300,55 @@ if (!in_array($selectedDate, $dates, true)) {
                             </table>
                         </section>
                     <?php endforeach; ?>
+                <?php endif; ?>
+            </section>
+
+            <section class="employee-print-report" aria-label="Printable employee directory">
+                <div class="print-report-header">
+                    <div>
+                        <span class="eyebrow">Employee Directory</span>
+                        <h2><?= h(APP_NAME) ?></h2>
+                        <p>Total Employees: <?= count($employees) ?></p>
+                    </div>
+                    <div class="print-report-meta">
+                        <div>
+                            <span>Total Employees</span>
+                            <strong><?= count($employees) ?></strong>
+                        </div>
+                        <div>
+                            <span>Departments</span>
+                            <strong><?= count($departments) ?></strong>
+                        </div>
+                        <div>
+                            <span>Printed</span>
+                            <strong><?= h(date('Y-m-d')) ?></strong>
+                        </div>
+                    </div>
+                </div>
+
+                <?php if (count($employees) === 0): ?>
+                    <div class="empty">No employees registered yet.</div>
+                <?php else: ?>
+                    <table class="print-table employee-directory-print-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Employee Number</th>
+                                <th>Employee Name</th>
+                                <th>Position</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($employees as $index => $employee): ?>
+                                <tr>
+                                    <td><?= $index + 1 ?></td>
+                                    <td><?= h($employee['employee_number']) ?></td>
+                                    <td><?= h($employee['employee_name']) ?></td>
+                                    <td><?= h($employee['position'] !== '' ? $employee['position'] : '-') ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 <?php endif; ?>
             </section>
 
@@ -425,6 +482,7 @@ if (!in_array($selectedDate, $dates, true)) {
                                 <h2>Registered Employees</h2>
                                 <p class="muted"><?= count($employees) ?> employee<?= count($employees) === 1 ? '' : 's' ?></p>
                             </div>
+                            <button class="button secondary" type="button" data-print-mode="employees">Print Employees</button>
                         </div>
 
                         <?php if (count($employees) === 0): ?>
@@ -446,9 +504,10 @@ if (!in_array($selectedDate, $dates, true)) {
                                             <tr>
                                                 <td>
                                                     <form id="employee_<?= h($employee['employee_number']) ?>_edit" method="post" class="inline-form">
-                                                        <input type="hidden" name="admin_action" value="register_employee">
+                                                        <input type="hidden" name="admin_action" value="update_employee">
+                                                        <input type="hidden" name="original_employee_number" value="<?= h($employee['employee_number']) ?>">
                                                     </form>
-                                                    <input form="employee_<?= h($employee['employee_number']) ?>_edit" name="employee_number" type="text" value="<?= h($employee['employee_number']) ?>" readonly>
+                                                    <input form="employee_<?= h($employee['employee_number']) ?>_edit" name="employee_number" type="text" value="<?= h($employee['employee_number']) ?>" required>
                                                 </td>
                                                 <td><input form="employee_<?= h($employee['employee_number']) ?>_edit" name="employee_name" type="text" value="<?= h($employee['employee_name']) ?>" required></td>
                                                 <td><input form="employee_<?= h($employee['employee_number']) ?>_edit" name="position" type="text" value="<?= h($employee['position'] ?? '') ?>"></td>
@@ -638,5 +697,17 @@ if (!in_array($selectedDate, $dates, true)) {
             </div>
         </section>
     </main>
+    <script>
+        document.querySelectorAll('[data-print-mode]').forEach((button) => {
+            button.addEventListener('click', () => {
+                document.body.dataset.printMode = button.dataset.printMode;
+                window.print();
+            });
+        });
+
+        window.addEventListener('afterprint', () => {
+            delete document.body.dataset.printMode;
+        });
+    </script>
 </body>
 </html>

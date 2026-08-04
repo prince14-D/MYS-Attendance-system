@@ -313,6 +313,62 @@ function register_employee(string $employeeNumber, string $employeeName, string 
     ];
 }
 
+function update_employee_record(string $originalEmployeeNumber, string $employeeNumber, string $employeeName, string $departmentId, string $position = ''): array
+{
+    $originalEmployeeNumber = normalize_employee_number($originalEmployeeNumber);
+    $employeeNumber = normalize_employee_number($employeeNumber);
+
+    if ($originalEmployeeNumber === '') {
+        return ['ok' => false, 'message' => 'Employee was not found.'];
+    }
+
+    $employees = read_employees();
+
+    if (!isset($employees[$originalEmployeeNumber])) {
+        return ['ok' => false, 'message' => 'Employee was not found.'];
+    }
+
+    if ($employeeNumber !== $originalEmployeeNumber && isset($employees[$employeeNumber])) {
+        return ['ok' => false, 'message' => 'Another employee already uses that employee number.'];
+    }
+
+    $result = register_employee($employeeNumber, $employeeName, $departmentId, $position);
+
+    if (!$result['ok']) {
+        return $result;
+    }
+
+    if ($employeeNumber === $originalEmployeeNumber) {
+        return ['ok' => true, 'message' => 'Employee updated successfully.'];
+    }
+
+    $employees = read_employees();
+    $employees[$employeeNumber]['registered_at'] = $employees[$originalEmployeeNumber]['registered_at'] ?? ($employees[$employeeNumber]['registered_at'] ?? date('Y-m-d H:i:s'));
+    unset($employees[$originalEmployeeNumber]);
+    write_employees($employees);
+
+    $records = read_attendance();
+
+    foreach ($records as $date => $dayRecords) {
+        if (!isset($dayRecords[$originalEmployeeNumber])) {
+            continue;
+        }
+
+        $records[$date][$employeeNumber] = $dayRecords[$originalEmployeeNumber];
+        $records[$date][$employeeNumber]['employee_number'] = $employeeNumber;
+        $records[$date][$employeeNumber]['employee_name'] = $employees[$employeeNumber]['employee_name'] ?? '';
+        $records[$date][$employeeNumber]['position'] = $employees[$employeeNumber]['position'] ?? '';
+        $records[$date][$employeeNumber]['department_id'] = $employees[$employeeNumber]['department_id'] ?? '';
+        $records[$date][$employeeNumber]['department_name'] = $employees[$employeeNumber]['department_name'] ?? 'Unassigned';
+        unset($records[$date][$originalEmployeeNumber]);
+        ksort($records[$date]);
+    }
+
+    write_attendance($records);
+
+    return ['ok' => true, 'message' => 'Employee number and profile updated successfully.'];
+}
+
 function sync_employee_details_to_attendance(string $employeeNumber, array $employee): void
 {
     $records = read_attendance();
