@@ -2,20 +2,51 @@
     "name": "Ministry of Youth & Sports Attendance System",
     "short_name": "MYS Attendance",
     "description": "Offline-capable employee attendance clock for the Ministry of Youth & Sports.",
+    "lang": "en",
+    "dir": "ltr",
     "id": "/index.php",
-    "start_url": "index.php",
+    "start_url": "./index.php",
     "scope": "./",
     "display": "standalone",
     "display_override": ["standalone", "minimal-ui"],
     "orientation": "portrait",
     "background_color": "#f5f7fb",
     "theme_color": "#123f7a",
+    "categories": ["productivity", "business"],
     "icons": [
         {
             "src": "assets/app-icon.svg",
             "sizes": "any",
             "type": "image/svg+xml",
             "purpose": "any maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Clock Screen",
+            "short_name": "Clock",
+            "description": "Open the attendance clock in/out screen.",
+            "url": "./index.php",
+            "icons": [
+                {
+                    "src": "assets/app-icon.svg",
+                    "sizes": "any",
+                    "type": "image/svg+xml"
+                }
+            ]
+        },
+        {
+            "name": "Admin Login",
+            "short_name": "Admin",
+            "description": "Open the admin login dashboard.",
+            "url": "./admin.php",
+            "icons": [
+                {
+                    "src": "assets/app-icon.svg",
+                    "sizes": "any",
+                    "type": "image/svg+xml"
+                }
+            ]
         }
     ]
 }

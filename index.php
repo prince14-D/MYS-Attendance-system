@@ -5,6 +5,17 @@ require_once __DIR__ . '/storage.php';
 
 $result = null;
 $employeeDirectory = all_employees();
+$employeeClockStatusDirectory = [];
+
+foreach ($employeeDirectory as $employee) {
+    $employeeNumber = (string) ($employee['employee_number'] ?? '');
+
+    if ($employeeNumber === '') {
+        continue;
+    }
+
+    $employeeClockStatusDirectory[$employeeNumber] = employee_clock_in_status($employeeNumber);
+}
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $result = employee_attendance_action(
@@ -96,6 +107,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                         <form method="post" autocomplete="off" id="attendanceForm">
                             <label for="employee_number">Employee Number</label>
                             <input id="employee_number" name="employee_number" type="text" inputmode="text" placeholder="Example: EMP001" required autofocus>
+                            <p class="muted" id="actionHint">Enter your employee number to continue.</p>
                             <input id="clockInPhoto" name="clock_in_photo" type="hidden">
 
                             <div class="camera-card" id="cameraCard" hidden>
@@ -117,7 +129,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
                             <div class="actions">
                                 <button class="button primary" type="submit" name="action" value="clock_in" id="clockInButton">Clock In</button>
-                                <button class="button secondary" type="submit" name="action" value="clock_out">Clock Out</button>
+                                <button class="button secondary" type="submit" name="action" value="clock_out" id="clockOutButton">Clock Out</button>
                             </div>
                         </form>
                     <?php endif; ?>
@@ -139,6 +151,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         const capturePhoto = document.getElementById('capturePhoto');
         const retakePhoto = document.getElementById('retakePhoto');
         const cameraMessage = document.getElementById('cameraMessage');
+        const actionHint = document.getElementById('actionHint');
+        const clockInButton = document.getElementById('clockInButton');
+        const clockOutButton = document.getElementById('clockOutButton');
         const offlineStatus = document.getElementById('offlineStatus');
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
@@ -150,9 +165,85 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             map[String(employee.employee_number).toUpperCase()] = employee;
             return map;
         }, {});
+        const employeeClockStatusByNumber = <?= json_encode($employeeClockStatusDirectory, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
         const offlineQueueKey = 'mys_attendance_offline_queue';
         let stream = null;
         let pendingInstallPrompt = null;
+
+        async function requestBackgroundSync() {
+            if (!('serviceWorker' in navigator) || !('SyncManager' in window)) {
+                return;
+            }
+
+            try {
+                const registration = await navigator.serviceWorker.ready;
+                await registration.sync.register('attendance-sync');
+            } catch (error) {
+                // Ignore unsupported/denied background sync.
+            }
+        }
+
+        function setActionState(options) {
+            if (clockInButton) {
+                clockInButton.disabled = Boolean(options.disableClockIn);
+            }
+
+            if (clockOutButton) {
+                clockOutButton.disabled = Boolean(options.disableClockOut);
+            }
+
+            if (actionHint) {
+                actionHint.textContent = options.hint || '';
+            }
+        }
+
+        function syncActionState() {
+            const employeeNumber = employeeInput?.value.trim().toUpperCase() || '';
+
+            if (employeeNumber === '') {
+                setActionState({
+                    disableClockIn: false,
+                    disableClockOut: false,
+                    hint: 'Enter your employee number to continue.'
+                });
+                return;
+            }
+
+            if (!employeesByNumber[employeeNumber]) {
+                setActionState({
+                    disableClockIn: true,
+                    disableClockOut: true,
+                    hint: 'This employee number is not registered.'
+                });
+                return;
+            }
+
+            const status = employeeClockStatusByNumber[employeeNumber] || { clocked_in: false, clocked_out: false };
+
+            if (status.clocked_out) {
+                setActionState({
+                    disableClockIn: true,
+                    disableClockOut: true,
+                    hint: 'You have already clocked in and clocked out for today.'
+                });
+                return;
+            }
+
+            if (status.clocked_in) {
+                setActionState({
+                    disableClockIn: true,
+                    disableClockOut: false,
+                    hint: 'Clock in already recorded. You can now clock out.'
+                });
+                return;
+            }
+
+            setActionState({
+                disableClockIn: false,
+                disableClockOut: true,
+                hint: 'Clock in first. Clock out will be enabled after clock in.'
+            });
+        }
 
         function refreshClock() {
             const now = new Date();
@@ -169,7 +260,42 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         setInterval(refreshClock, 1000);
 
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').catch(() => {});
+            navigator.serviceWorker.register('sw.js').then((registration) => {
+                if (registration.waiting) {
+                    registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                }
+
+                registration.addEventListener('updatefound', () => {
+                    const worker = registration.installing;
+
+                    if (!worker) {
+                        return;
+                    }
+
+                    worker.addEventListener('statechange', () => {
+                        if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+                            worker.postMessage({ type: 'SKIP_WAITING' });
+                        }
+                    });
+                });
+            }).catch(() => {});
+
+            navigator.serviceWorker.addEventListener('message', (event) => {
+                if (event.data?.type === 'SYNC_QUEUE') {
+                    syncOfflineQueue();
+                }
+            });
+
+            let hasRefreshed = false;
+
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (hasRefreshed) {
+                    return;
+                }
+
+                hasRefreshed = true;
+                window.location.reload();
+            });
         }
 
         window.addEventListener('beforeinstallprompt', (event) => {
@@ -204,6 +330,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         function writeQueue(queue) {
             localStorage.setItem(offlineQueueKey, JSON.stringify(queue));
             updateOfflineStatus();
+
+            if (queue.length > 0) {
+                requestBackgroundSync();
+            }
         }
 
         function updateOfflineStatus() {
@@ -362,9 +492,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             if (employeeInput.value.trim().length >= 2) {
                 openCamera();
             }
+
+            syncActionState();
         });
 
-        employeeInput?.addEventListener('blur', openCamera);
+        employeeInput?.addEventListener('blur', () => {
+            openCamera();
+            syncActionState();
+        });
 
         capturePhoto?.addEventListener('click', () => {
             if (!stream || cameraStream.videoWidth === 0) {
@@ -411,10 +546,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         window.addEventListener('online', () => {
             updateOfflineStatus();
+            requestBackgroundSync();
             syncOfflineQueue();
         });
         window.addEventListener('offline', updateOfflineStatus);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                syncOfflineQueue();
+            }
+        });
         updateOfflineStatus();
+        syncActionState();
         syncOfflineQueue();
     </script>
 </body>

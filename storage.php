@@ -758,6 +758,11 @@ function import_attendance_from_upload(array $file): array
         $clockOut = import_time_value($row[$columns['clockout'] ?? -1] ?? '');
         $existing = $records[$date][$employeeNumber] ?? [];
 
+        if ($clockIn === '' && $clockOut !== '') {
+            $skipped++;
+            continue;
+        }
+
         if (!isset($records[$date])) {
             $records[$date] = [];
         }
@@ -889,6 +894,10 @@ function update_attendance_record(
 
     if ($date === '') {
         return ['ok' => false, 'message' => 'Enter a valid attendance date.'];
+    }
+
+    if ($clockIn === '' && $clockOut !== '') {
+        return ['ok' => false, 'message' => 'Clock in must be set before clock out.'];
     }
 
     if ($clockIn !== '' && $clockOut !== '' && strtotime($date . ' ' . $clockOut) < strtotime($date . ' ' . $clockIn)) {
@@ -1056,7 +1065,7 @@ function record_attendance_action(string $employeeNumber, string $action, string
         $body = 'Welcome to work this morning. Your clock in has been recorded successfully.';
     } else {
         if ($record['clock_in'] === '') {
-            return ['ok' => false, 'message' => 'Please clock in before clocking out.'];
+            return ['ok' => false, 'message' => 'You must clock in first before you can clock out.'];
         }
 
         if ($record['clock_out'] !== '') {
@@ -1203,4 +1212,23 @@ function worked_hours(array $record): string
     $remainingMinutes = $minutes % 60;
 
     return sprintf('%02d:%02d', $hours, $remainingMinutes);
+}
+
+function employee_clock_in_status(string $employeeNumber, ?string $date = null): array
+{
+    $employeeNumber = normalize_employee_number($employeeNumber);
+    $date ??= date('Y-m-d');
+
+    if ($employeeNumber === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        return ['clocked_in' => false, 'clocked_out' => false, 'date' => $date];
+    }
+
+    $records = read_attendance();
+    $record = $records[$date][$employeeNumber] ?? null;
+
+    return [
+        'clocked_in' => $record !== null && ($record['clock_in'] ?? '') !== '',
+        'clocked_out' => $record !== null && ($record['clock_out'] ?? '') !== '',
+        'date' => $date,
+    ];
 }

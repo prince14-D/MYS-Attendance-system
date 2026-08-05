@@ -105,6 +105,13 @@ foreach ($employees as $employee) {
     }
 }
 
+$safe_form_id = static function (string $value): string {
+    $safe = preg_replace('/[^A-Za-z0-9_-]+/', '_', $value) ?? '';
+    $safe = trim($safe, '_');
+
+    return $safe !== '' ? $safe : 'row';
+};
+
 $printRecordGroups = [];
 
 foreach ($records as $record) {
@@ -141,6 +148,32 @@ $formatWorkedMinutes = static function (int $minutes): string {
 };
 
 $profileReviews = array_slice($records, 0, 12);
+$profileReviewData = [];
+
+foreach ($profileReviews as $record) {
+    $employeeName = trim((string) ($record['employee_name'] ?? 'Unknown Employee'));
+    $employeeNumber = trim((string) ($record['employee_number'] ?? '-'));
+    $departmentName = trim((string) ($record['department_name'] ?? 'Unassigned'));
+    $clockIn = trim((string) ($record['clock_in'] ?? ''));
+    $clockOut = trim((string) ($record['clock_out'] ?? ''));
+    $status = trim((string) ($record['status'] ?? ''));
+
+    if ($status === '') {
+        $status = $clockIn !== '' && $clockOut !== '' ? 'Complete' : 'Incomplete';
+    }
+
+    $profileReviewData[] = [
+        'employee_name' => $employeeName !== '' ? $employeeName : 'Unknown Employee',
+        'employee_number' => $employeeNumber !== '' ? $employeeNumber : '-',
+        'department_name' => $departmentName !== '' ? $departmentName : 'Unassigned',
+        'position' => trim((string) ($record['position'] ?? '')),
+        'clock_in' => $clockIn,
+        'clock_out' => $clockOut,
+        'worked_hours' => worked_hours($record),
+        'status' => $status,
+        'clock_in_photo' => trim((string) ($record['clock_in_photo'] ?? '')),
+    ];
+}
 
 if (!in_array($selectedDate, $dates, true)) {
     array_unshift($dates, $selectedDate);
@@ -500,19 +533,20 @@ if (!in_array($selectedDate, $dates, true)) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <?php foreach ($employees as $employee): ?>
+                                        <?php foreach ($employees as $employeeIndex => $employee): ?>
                                             <tr>
+                                                <?php $employeeFormId = 'employee_' . $safe_form_id((string) $employee['employee_number']) . '_' . $employeeIndex . '_edit'; ?>
                                                 <td>
-                                                    <form id="employee_<?= h($employee['employee_number']) ?>_edit" method="post" class="inline-form">
+                                                    <form id="<?= h($employeeFormId) ?>" method="post" class="inline-form">
                                                         <input type="hidden" name="admin_action" value="update_employee">
                                                         <input type="hidden" name="original_employee_number" value="<?= h($employee['employee_number']) ?>">
                                                     </form>
-                                                    <input form="employee_<?= h($employee['employee_number']) ?>_edit" name="employee_number" type="text" value="<?= h($employee['employee_number']) ?>" required>
+                                                    <input form="<?= h($employeeFormId) ?>" name="employee_number" type="text" value="<?= h($employee['employee_number']) ?>" required>
                                                 </td>
-                                                <td><input form="employee_<?= h($employee['employee_number']) ?>_edit" name="employee_name" type="text" value="<?= h($employee['employee_name']) ?>" required></td>
-                                                <td><input form="employee_<?= h($employee['employee_number']) ?>_edit" name="position" type="text" value="<?= h($employee['position'] ?? '') ?>"></td>
+                                                <td><input form="<?= h($employeeFormId) ?>" name="employee_name" type="text" value="<?= h($employee['employee_name']) ?>" required></td>
+                                                <td><input form="<?= h($employeeFormId) ?>" name="position" type="text" value="<?= h($employee['position'] ?? '') ?>"></td>
                                                 <td>
-                                                    <select form="employee_<?= h($employee['employee_number']) ?>_edit" name="department_id">
+                                                    <select form="<?= h($employeeFormId) ?>" name="department_id">
                                                         <option value="">Unassigned</option>
                                                         <?php foreach ($departments as $department): ?>
                                                             <option value="<?= h($department['department_id']) ?>" <?= ($employee['department_id'] ?? '') === $department['department_id'] ? 'selected' : '' ?>>
@@ -522,12 +556,12 @@ if (!in_array($selectedDate, $dates, true)) {
                                                     </select>
                                                 </td>
                                                 <td class="action-cell">
-                                                    <button form="employee_<?= h($employee['employee_number']) ?>_edit" class="link-button small-button" type="submit">Save</button>
-                                                <form method="post" class="inline-form" onsubmit="return confirm('Delete this employee? Attendance history will remain.');">
-                                                    <input type="hidden" name="admin_action" value="delete_employee">
-                                                    <input type="hidden" name="employee_number" value="<?= h($employee['employee_number']) ?>">
-                                                    <button class="link-button danger-link" type="submit">Delete</button>
-                                                </form>
+                                                    <button form="<?= h($employeeFormId) ?>" class="link-button small-button" type="submit">Save</button>
+                                                    <form method="post" class="inline-form" onsubmit="return confirm('Delete this employee? Attendance history will remain.');">
+                                                        <input type="hidden" name="admin_action" value="delete_employee">
+                                                        <input type="hidden" name="employee_number" value="<?= h($employee['employee_number']) ?>">
+                                                        <button class="link-button danger-link" type="submit">Delete</button>
+                                                    </form>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -545,60 +579,26 @@ if (!in_array($selectedDate, $dates, true)) {
                         <span class="eyebrow">Review</span>
                         <h2>Clock-In Profiles</h2>
                     </div>
-                    <p class="muted">Each employee card shows the profile, clock-in time, and worked hours for the selected day.</p>
+                    <p class="muted">Select an employee name to preview the full attendance profile in an overlay.</p>
                 </div>
 
                 <?php if (count($profileReviews) === 0): ?>
                     <div class="empty">No attendance records found for this date.</div>
                 <?php else: ?>
-                    <div class="profile-grid">
-                        <?php foreach ($profileReviews as $record): ?>
-                            <?php
-                                $employeeName = $record['employee_name'] ?? 'Unknown Employee';
-                                $employeeNumber = $record['employee_number'] ?? '-';
-                                $departmentName = $record['department_name'] ?? 'Unassigned';
-                                $workedHours = worked_hours($record) ?: '00:00';
-                                $initials = strtoupper(substr($employeeName, 0, 1) . substr(trim(strrchr($employeeName, ' ') ?: $employeeName), 0, 1));
-                            ?>
-                            <article class="profile-card">
-                                <div class="profile-head">
-                                    <div class="profile-avatar">
-                                        <?php if (($record['clock_in_photo'] ?? '') !== ''): ?>
-                                            <img src="<?= h($record['clock_in_photo']) ?>" alt="Clock-in photo for <?= h($employeeNumber) ?>">
-                                        <?php else: ?>
-                                            <span><?= h($initials !== '' ? $initials : 'NA') ?></span>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div>
-                                        <strong><?= h($employeeName) ?></strong>
-                                        <p><?= h($employeeNumber) ?></p>
-                                    </div>
-                                </div>
-
-                                <dl class="profile-metrics">
-                                    <div>
-                                        <dt>Department</dt>
-                                        <dd><?= h($departmentName) ?></dd>
-                                    </div>
-                                    <div>
-                                        <dt>Clock In</dt>
-                                        <dd><?= h($record['clock_in'] ?: '-') ?></dd>
-                                    </div>
-                                    <div>
-                                        <dt>Clock Out</dt>
-                                        <dd><?= h($record['clock_out'] ?: '-') ?></dd>
-                                    </div>
-                                    <div>
-                                        <dt>Worked Time</dt>
-                                        <dd><?= h($workedHours) ?></dd>
-                                    </div>
-                                </dl>
-
-                                <span class="badge <?= ($record['status'] ?? '') === 'Complete' ? 'complete' : 'incomplete' ?>">
-                                    <?= h($record['status'] ?? 'Pending') ?>
-                                </span>
-                            </article>
-                        <?php endforeach; ?>
+                    <div class="profile-review-shell">
+                        <div class="profile-name-list" role="list" aria-label="Profile review list">
+                            <?php foreach ($profileReviewData as $index => $profile): ?>
+                                <button
+                                    class="profile-name-button"
+                                    type="button"
+                                    data-profile-index="<?= $index ?>"
+                                    role="listitem"
+                                >
+                                    <?= h($profile['employee_name']) ?>
+                                </button>
+                            <?php endforeach; ?>
+                        </div>
+                        <p class="muted profile-review-note">Showing <?= count($profileReviewData) ?> recent record<?= count($profileReviewData) === 1 ? '' : 's' ?> for this date.</p>
                     </div>
                 <?php endif; ?>
             </div>
@@ -610,6 +610,20 @@ if (!in_array($selectedDate, $dates, true)) {
                         <h2>Attendance Log</h2>
                         <p class="muted"><?= count($records) ?> employee record<?= count($records) === 1 ? '' : 's' ?> for <?= h($selectedDate) ?></p>
                     </div>
+                    <div class="records-filter-bar" aria-label="Attendance filters">
+                        <div class="records-filter-item search-item">
+                            <label for="recordSearch">Quick Search</label>
+                            <input id="recordSearch" type="search" placeholder="Search number, name, position, department">
+                        </div>
+                        <div class="records-filter-item status-item">
+                            <label for="recordStatusFilter">Status</label>
+                            <select id="recordStatusFilter">
+                                <option value="all">All</option>
+                                <option value="complete">Complete</option>
+                                <option value="incomplete">Incomplete</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="export-links">
                         <a class="link-button" href="export.php?format=csv&date=<?= h(urlencode($selectedDate)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">CSV</a>
                         <a class="link-button" href="export.php?format=xls&date=<?= h(urlencode($selectedDate)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">Excel</a>
@@ -620,6 +634,7 @@ if (!in_array($selectedDate, $dates, true)) {
                 <?php if (count($records) === 0): ?>
                     <div class="empty">No attendance records found for this date.</div>
                 <?php else: ?>
+                    <div class="records-filter-summary" id="recordsFilterSummary" role="status" aria-live="polite"></div>
                     <div class="table-wrap">
                         <table>
                             <thead>
@@ -638,9 +653,21 @@ if (!in_array($selectedDate, $dates, true)) {
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($records as $record): ?>
-                                    <tr>
-                                        <?php $attendanceFormId = 'attendance_' . h($record['date']) . '_' . h($record['employee_number']); ?>
+                                <?php foreach ($records as $recordIndex => $record): ?>
+                                    <?php
+                                        $rowSearch = implode(' ', [
+                                            (string) ($record['employee_number'] ?? ''),
+                                            (string) ($record['employee_name'] ?? ''),
+                                            (string) ($record['position'] ?? ''),
+                                            (string) ($record['department_name'] ?? ''),
+                                            (string) ($record['date'] ?? ''),
+                                            (string) ($record['clock_in'] ?? ''),
+                                            (string) ($record['clock_out'] ?? ''),
+                                            (string) ($record['status'] ?? ''),
+                                        ]);
+                                    ?>
+                                    <tr data-record-row data-record-search="<?= h(strtolower($rowSearch)) ?>" data-record-status="<?= h(strtolower((string) ($record['status'] ?? 'incomplete'))) ?>">
+                                        <?php $attendanceFormId = 'attendance_' . $safe_form_id((string) $record['date'] . '_' . (string) $record['employee_number']) . '_' . $recordIndex; ?>
                                         <td>
                                             <form id="<?= $attendanceFormId ?>_edit" method="post" class="inline-form">
                                                 <input type="hidden" name="admin_action" value="update_attendance">
@@ -681,23 +708,171 @@ if (!in_array($selectedDate, $dates, true)) {
                                         </td>
                                         <td class="action-cell">
                                             <button form="<?= $attendanceFormId ?>_edit" class="link-button small-button" type="submit">Save</button>
-                                        <form method="post" class="inline-form" onsubmit="return confirm('Delete this attendance record?');">
-                                            <input type="hidden" name="admin_action" value="delete_attendance">
-                                            <input type="hidden" name="date" value="<?= h($record['date']) ?>">
-                                            <input type="hidden" name="employee_number" value="<?= h($record['employee_number']) ?>">
-                                            <button class="link-button danger-link" type="submit">Delete</button>
-                                        </form>
+                                            <form method="post" class="inline-form" onsubmit="return confirm('Delete this attendance record?');">
+                                                <input type="hidden" name="admin_action" value="delete_attendance">
+                                                <input type="hidden" name="date" value="<?= h($record['date']) ?>">
+                                                <input type="hidden" name="employee_number" value="<?= h($record['employee_number']) ?>">
+                                                <button class="link-button danger-link" type="submit">Delete</button>
+                                            </form>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
                     </div>
+                    <div class="empty small-empty" id="recordsFilterEmpty" hidden>No records match your search/filter.</div>
                 <?php endif; ?>
             </div>
         </section>
     </main>
+
+    <div class="profile-modal" id="profileModal" hidden>
+        <div class="profile-modal-backdrop" data-profile-close="backdrop"></div>
+        <article class="profile-modal-card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+            <button class="profile-modal-close" type="button" id="profileModalClose" aria-label="Close profile preview">Close</button>
+
+            <div class="profile-modal-head">
+                <div class="profile-modal-avatar" id="profileModalAvatar"></div>
+                <div>
+                    <h3 id="profileModalTitle">Employee Profile</h3>
+                    <p id="profileModalSubtitle">Attendance details</p>
+                </div>
+            </div>
+
+            <dl class="profile-modal-metrics" id="profileModalMetrics"></dl>
+            <div id="profileModalStatusWrap"></div>
+        </article>
+    </div>
+
     <script>
+        const profileReviewData = <?= json_encode($profileReviewData, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+        const profileModal = document.getElementById('profileModal');
+        const profileModalClose = document.getElementById('profileModalClose');
+        const profileModalAvatar = document.getElementById('profileModalAvatar');
+        const profileModalTitle = document.getElementById('profileModalTitle');
+        const profileModalSubtitle = document.getElementById('profileModalSubtitle');
+        const profileModalMetrics = document.getElementById('profileModalMetrics');
+        const profileModalStatusWrap = document.getElementById('profileModalStatusWrap');
+
+        function escapeHtml(value) {
+            return String(value)
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
+        }
+
+        function profileInitials(name) {
+            const parts = String(name).trim().split(/\s+/).filter(Boolean);
+
+            if (parts.length === 0) {
+                return 'NA';
+            }
+
+            if (parts.length === 1) {
+                return parts[0].slice(0, 2).toUpperCase();
+            }
+
+            return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        }
+
+        function closeProfileModal() {
+            if (profileModal) {
+                profileModal.hidden = true;
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        function openProfileModal(index) {
+            const profile = profileReviewData[index];
+
+            if (!profile || !profileModal) {
+                return;
+            }
+
+            const statusClass = profile.status === 'Complete' ? 'complete' : 'incomplete';
+            const avatarHtml = profile.clock_in_photo !== ''
+                ? `<img src="${escapeHtml(profile.clock_in_photo)}" alt="Clock-in photo for ${escapeHtml(profile.employee_number)}">`
+                : `<span>${escapeHtml(profileInitials(profile.employee_name))}</span>`;
+
+            profileModalAvatar.innerHTML = avatarHtml;
+            profileModalTitle.textContent = profile.employee_name;
+            profileModalSubtitle.textContent = `${profile.employee_number} - ${profile.department_name}`;
+
+            profileModalMetrics.innerHTML = `
+                <div><dt>Position</dt><dd>${escapeHtml(profile.position || '-')}</dd></div>
+                <div><dt>Clock In</dt><dd>${escapeHtml(profile.clock_in || '-')}</dd></div>
+                <div><dt>Clock Out</dt><dd>${escapeHtml(profile.clock_out || '-')}</dd></div>
+                <div><dt>Worked Time</dt><dd>${escapeHtml(profile.worked_hours || '-')}</dd></div>
+            `;
+
+            profileModalStatusWrap.innerHTML = `<span class="badge ${statusClass}">${escapeHtml(profile.status)}</span>`;
+            profileModal.hidden = false;
+            document.body.classList.add('modal-open');
+        }
+
+        document.querySelectorAll('.profile-name-button').forEach((button) => {
+            button.addEventListener('click', () => {
+                openProfileModal(Number(button.dataset.profileIndex));
+            });
+        });
+
+        profileModalClose?.addEventListener('click', closeProfileModal);
+        profileModal?.addEventListener('click', (event) => {
+            if (event.target instanceof HTMLElement && event.target.dataset.profileClose === 'backdrop') {
+                closeProfileModal();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && profileModal && !profileModal.hidden) {
+                closeProfileModal();
+            }
+        });
+
+        const recordSearch = document.getElementById('recordSearch');
+        const recordStatusFilter = document.getElementById('recordStatusFilter');
+        const recordsFilterSummary = document.getElementById('recordsFilterSummary');
+        const recordsFilterEmpty = document.getElementById('recordsFilterEmpty');
+        const recordRows = Array.from(document.querySelectorAll('[data-record-row]'));
+
+        function applyRecordsFilter() {
+            if (recordRows.length === 0) {
+                return;
+            }
+
+            const searchValue = (recordSearch?.value || '').trim().toLowerCase();
+            const statusValue = (recordStatusFilter?.value || 'all').toLowerCase();
+            let visibleCount = 0;
+
+            recordRows.forEach((row) => {
+                const haystack = String(row.getAttribute('data-record-search') || '');
+                const status = String(row.getAttribute('data-record-status') || 'incomplete');
+                const searchMatch = searchValue === '' || haystack.includes(searchValue);
+                const statusMatch = statusValue === 'all' || status === statusValue;
+                const isVisible = searchMatch && statusMatch;
+
+                row.hidden = !isVisible;
+
+                if (isVisible) {
+                    visibleCount += 1;
+                }
+            });
+
+            if (recordsFilterSummary) {
+                recordsFilterSummary.textContent = `${visibleCount} of ${recordRows.length} records shown`;
+            }
+
+            if (recordsFilterEmpty) {
+                recordsFilterEmpty.hidden = visibleCount !== 0;
+            }
+        }
+
+        recordSearch?.addEventListener('input', applyRecordsFilter);
+        recordStatusFilter?.addEventListener('change', applyRecordsFilter);
+        applyRecordsFilter();
+
         document.querySelectorAll('[data-print-mode]').forEach((button) => {
             button.addEventListener('click', () => {
                 document.body.dataset.printMode = button.dataset.printMode;

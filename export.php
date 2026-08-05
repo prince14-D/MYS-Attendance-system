@@ -27,6 +27,13 @@ function export_resolve_record(array $record, array $employees): array
 {
     $employeeNumber = normalize_employee_number((string) ($record['employee_number'] ?? ''));
     $employee = $employeeNumber !== '' ? ($employees[$employeeNumber] ?? null) : null;
+    $clockIn = trim((string) ($record['clock_in'] ?? ''));
+    $clockOut = trim((string) ($record['clock_out'] ?? ''));
+    $status = trim((string) ($record['status'] ?? ''));
+
+    if ($status === '') {
+        $status = $clockIn !== '' && $clockOut !== '' ? 'Complete' : 'Incomplete';
+    }
 
     return [
         'date' => (string) ($record['date'] ?? ''),
@@ -34,9 +41,9 @@ function export_resolve_record(array $record, array $employees): array
         'employee_name' => trim((string) ($record['employee_name'] ?? ($employee['employee_name'] ?? ''))),
         'position' => trim((string) ($record['position'] ?? ($employee['position'] ?? ''))),
         'department_name' => trim((string) ($record['department_name'] ?? ($employee['department_name'] ?? 'Unassigned'))),
-        'clock_in' => trim((string) ($record['clock_in'] ?? '')),
-        'clock_out' => trim((string) ($record['clock_out'] ?? '')),
-        'status' => (string) ($record['status'] ?? ''),
+        'clock_in' => $clockIn,
+        'clock_out' => $clockOut,
+        'status' => $status,
         'worked_hours' => worked_hours($record),
         'clock_in_photo' => (string) ($record['clock_in_photo'] ?? ''),
     ];
@@ -238,13 +245,18 @@ function pdf_logo_block(int $x, int $y): string
     return $content;
 }
 
-function build_simple_pdf(array $records, string $date, string $departmentName): string
-{
-    $employees = read_employees();
-    $completeCount = count(array_filter($records, static fn (array $record): bool => ($record['status'] ?? '') === 'Complete'));
-    $incompleteCount = count($records) - $completeCount;
-    $visibleRecords = array_slice($records, 0, 15);
-
+function build_pdf_content_for_page(
+    array $records,
+    array $employees,
+    string $date,
+    string $departmentName,
+    int $pageNumber,
+    int $pageCount,
+    int $completeCount,
+    int $incompleteCount,
+    int $offset,
+    int $perPage
+): string {
     $content = "0.97 0.98 1 rg\n0 0 842 595 re f\n";
     $content .= "0.07 0.25 0.48 rg\n0 522 842 73 re f\n";
     $content .= "0.78 0.12 0.20 rg\n0 517 842 5 re f\n";
@@ -255,6 +267,7 @@ function build_simple_pdf(array $records, string $date, string $departmentName):
     $content .= pdf_text('Date: ' . $date, 86, 533, 10);
     $content .= pdf_text('Department: ' . $departmentName, 280, 533, 10);
     $content .= pdf_text('Generated: ' . date('Y-m-d H:i'), 606, 533, 9);
+    $content .= pdf_text('Page ' . $pageNumber . ' of ' . $pageCount, 700, 549, 9, 'F2');
 
     $summaryCards = [
         [38, 443, 172, 42, 'Total Records', (string) count($records)],
@@ -289,6 +302,7 @@ function build_simple_pdf(array $records, string $date, string $departmentName):
     $content .= "0 0 0 rg\n";
     $y = 373;
     $rowHeight = 17;
+    $visibleRecords = array_slice($records, $offset, $perPage);
 
     foreach ($visibleRecords as $index => $record) {
         $resolved = export_resolve_record($record, $employees);
@@ -319,8 +333,6 @@ function build_simple_pdf(array $records, string $date, string $departmentName):
 
     if (count($records) === 0) {
         $content .= pdf_text('No attendance records found for this date and department.', 58, 335, 10, 'F2');
-    } elseif (count($records) > 15) {
-        $content .= pdf_text('Only the first 15 records are shown on this PDF page. Export CSV or Excel for the complete list.', 58, $y - 4, 9);
     }
 
     $content .= "0.07 0.25 0.48 rg\n";
@@ -331,13 +343,55 @@ function build_simple_pdf(array $records, string $date, string $departmentName):
     $content .= pdf_line(525, 74, 705, 74);
     $content .= pdf_text('Approved By', 572, 57, 9);
 
+    return $content;
+}
+
+function build_simple_pdf(array $records, string $date, string $departmentName): string
+{
+    $employees = read_employees();
+    $completeCount = count(array_filter($records, static fn (array $record): bool => ($record['status'] ?? '') === 'Complete'));
+    $incompleteCount = count($records) - $completeCount;
+    $perPage = 15;
+    $pageCount = max(1, (int) ceil(max(1, count($records)) / $perPage));
+
     $objects = [];
     $objects[] = "<< /Type /Catalog /Pages 2 0 R >>";
-    $objects[] = "<< /Type /Pages /Kids [3 0 R] /Count 1 >>";
-    $objects[] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>";
+
+    $fontCourierObjectNumber = 3;
+    $fontBoldObjectNumber = 4;
+    $firstPageObjectNumber = 5;
+    $pagesObjectNumber = $firstPageObjectNumber + ($pageCount * 2);
+
+    $pageObjectNumbers = [];
+    $contentObjectNumbers = [];
+
+    for ($index = 0; $index < $pageCount; $index++) {
+        $pageObjectNumbers[] = $firstPageObjectNumber + ($index * 2);
+        $contentObjectNumbers[] = $firstPageObjectNumber + ($index * 2) + 1;
+    }
+
+    $kids = implode(' ', array_map(static fn (int $number): string => $number . ' 0 R', $pageObjectNumbers));
+    $objects[] = "<< /Type /Pages /Kids [" . $kids . "] /Count " . $pageCount . " >>";
     $objects[] = "<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>";
     $objects[] = "<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>";
-    $objects[] = "<< /Length " . strlen($content) . " >>\nstream\n" . $content . "endstream";
+
+    for ($pageIndex = 0; $pageIndex < $pageCount; $pageIndex++) {
+        $content = build_pdf_content_for_page(
+            $records,
+            $employees,
+            $date,
+            $departmentName,
+            $pageIndex + 1,
+            $pageCount,
+            $completeCount,
+            $incompleteCount,
+            $pageIndex * $perPage,
+            $perPage
+        );
+
+        $objects[] = "<< /Type /Page /Parent " . $pagesObjectNumber . " 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 " . $fontCourierObjectNumber . " 0 R /F2 " . $fontBoldObjectNumber . " 0 R >> >> /Contents " . $contentObjectNumbers[$pageIndex] . " 0 R >>";
+        $objects[] = "<< /Length " . strlen($content) . " >>\nstream\n" . $content . "endstream";
+    }
 
     $pdf = "%PDF-1.4\n";
     $offsets = [0];
