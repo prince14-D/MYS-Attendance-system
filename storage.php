@@ -702,6 +702,186 @@ function import_time_value(string $value): string
     return $timestamp ? date('H:i:s', $timestamp) : '';
 }
 
+function attendance_flags_for_times(string $date, string $clockIn, string $clockOut): array
+{
+    if ($clockIn === '' && $clockOut === '') {
+        return [];
+    }
+
+    $flags = [];
+    $start = strtotime($date . ' ' . SHIFT_START_TIME);
+    $end = strtotime($date . ' ' . SHIFT_END_TIME);
+    $in = $clockIn !== '' ? strtotime($date . ' ' . $clockIn) : false;
+    $out = $clockOut !== '' ? strtotime($date . ' ' . $clockOut) : false;
+
+    if ($in !== false && $start !== false) {
+        $lateSeconds = max(0, $in - $start - (LATE_GRACE_MINUTES * 60));
+
+        if ($lateSeconds > 0) {
+            $flags['late'] = true;
+            $flags['late_minutes'] = (int) floor($lateSeconds / 60);
+        }
+    }
+
+    if ($out !== false && $end !== false) {
+        $earlySeconds = max(0, $end - $out - (EARLY_OUT_GRACE_MINUTES * 60));
+
+        if ($earlySeconds > 0) {
+            $flags['early_out'] = true;
+            $flags['early_out_minutes'] = (int) floor($earlySeconds / 60);
+        }
+    }
+
+    return $flags;
+}
+
+function merge_attendance_flags(array $record): array
+{
+    $date = (string) ($record['date'] ?? '');
+    $clockIn = (string) ($record['clock_in'] ?? '');
+    $clockOut = (string) ($record['clock_out'] ?? '');
+
+    if ($date === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        unset($record['flags']);
+        return $record;
+    }
+
+    $record['flags'] = attendance_flags_for_times($date, $clockIn, $clockOut);
+
+    return $record;
+}
+
+function backup_snapshot_payload(): array
+{
+    return [
+        'meta' => [
+            'app' => APP_NAME,
+            'generated_at' => date('c'),
+            'format_version' => 1,
+        ],
+        'attendance' => read_attendance(),
+        'employees' => read_employees(),
+        'departments' => read_departments(),
+    ];
+}
+
+function create_json_backup_snapshot(): array
+{
+    $payload = backup_snapshot_payload();
+    $json = json_encode($payload, JSON_PRETTY_PRINT);
+
+    if ($json === false) {
+        return ['ok' => false, 'message' => 'Unable to generate backup snapshot.'];
+    }
+
+    return [
+        'ok' => true,
+        'json' => $json,
+        'filename' => 'mys-attendance-backup-' . date('Ymd-His') . '.json',
+    ];
+}
+
+function restore_from_backup_upload(array $file): array
+{
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        return ['ok' => false, 'message' => 'Choose a JSON backup file to restore.'];
+    }
+
+    if (($file['size'] ?? 0) > 10 * 1024 * 1024) {
+        return ['ok' => false, 'message' => 'Backup file must be 10 MB or smaller.'];
+    }
+
+    $path = (string) ($file['tmp_name'] ?? '');
+    $extension = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+
+    if ($extension !== 'json') {
+        return ['ok' => false, 'message' => 'Upload a valid .json backup file.'];
+    }
+
+    $contents = file_get_contents($path);
+
+    if ($contents === false) {
+        return ['ok' => false, 'message' => 'Unable to read uploaded backup file.'];
+    }
+
+    $payload = json_decode($contents, true);
+
+    if (!is_array($payload)) {
+        return ['ok' => false, 'message' => 'Backup file is not valid JSON.'];
+    }
+
+    $attendance = $payload['attendance'] ?? null;
+    $employees = $payload['employees'] ?? null;
+    $departments = $payload['departments'] ?? null;
+
+    if (!is_array($attendance) || !is_array($employees) || !is_array($departments)) {
+        return ['ok' => false, 'message' => 'Backup file is missing required data sections.'];
+    }
+
+    foreach ($attendance as $date => $dayRecords) {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $date) || !is_array($dayRecords)) {
+            return ['ok' => false, 'message' => 'Attendance section in backup is invalid.'];
+        }
+
+        foreach ($dayRecords as $employeeNumber => $record) {
+            if (!is_array($record)) {
+                return ['ok' => false, 'message' => 'Attendance record format is invalid in backup.'];
+            }
+
+            if (!isset($record['employee_number'], $record['date'])) {
+                return ['ok' => false, 'message' => 'Attendance record missing required fields in backup.'];
+            }
+
+            $record['employee_number'] = normalize_employee_number((string) $record['employee_number']);
+            $record['date'] = import_date_value((string) $record['date']);
+            $record['clock_in'] = import_time_value((string) ($record['clock_in'] ?? ''));
+            $record['clock_out'] = import_time_value((string) ($record['clock_out'] ?? ''));
+            $record['status'] = $record['clock_in'] !== '' && $record['clock_out'] !== '' ? 'Complete' : 'Incomplete';
+            $record['flags'] = attendance_flags_for_times($record['date'], $record['clock_in'], $record['clock_out']);
+
+            if ($record['employee_number'] === '' || $record['date'] === '') {
+                return ['ok' => false, 'message' => 'Attendance record contains invalid employee/date values.'];
+            }
+
+            $attendance[$date][$employeeNumber] = $record;
+        }
+    }
+
+    foreach ($employees as $employeeNumber => $employee) {
+        if (!is_array($employee) || !isset($employee['employee_number'], $employee['employee_name'])) {
+            return ['ok' => false, 'message' => 'Employee section in backup is invalid.'];
+        }
+
+        $normalized = normalize_employee_number((string) $employee['employee_number']);
+
+        if ($normalized === '') {
+            return ['ok' => false, 'message' => 'Employee number in backup is invalid.'];
+        }
+
+        $employees[$employeeNumber]['employee_number'] = $normalized;
+    }
+
+    foreach ($departments as $departmentId => $department) {
+        if (!is_array($department) || !isset($department['department_id'], $department['department_name'])) {
+            return ['ok' => false, 'message' => 'Department section in backup is invalid.'];
+        }
+
+        $normalized = normalize_department_id((string) $department['department_id']);
+
+        if ($normalized === '') {
+            return ['ok' => false, 'message' => 'Department id in backup is invalid.'];
+        }
+
+        $departments[$departmentId]['department_id'] = $normalized;
+    }
+
+    write_attendance($attendance);
+    write_employees($employees);
+    write_departments($departments);
+
+    return ['ok' => true, 'message' => 'Backup restored successfully.'];
+}
+
 function import_attendance_from_upload(array $file): array
 {
     $spreadsheet = import_spreadsheet_rows($file);
@@ -767,7 +947,7 @@ function import_attendance_from_upload(array $file): array
             $records[$date] = [];
         }
 
-        $records[$date][$employeeNumber] = [
+        $record = [
             'employee_number' => $employeeNumber,
             'employee_name' => $employeeName !== '' ? $employeeName : ($existing['employee_name'] ?? ''),
             'position' => $position !== '' ? $position : ($existing['position'] ?? ''),
@@ -779,6 +959,8 @@ function import_attendance_from_upload(array $file): array
             'clock_in_photo' => $existing['clock_in_photo'] ?? '',
             'status' => $clockIn !== '' && $clockOut !== '' ? 'Complete' : 'Incomplete',
         ];
+
+        $records[$date][$employeeNumber] = merge_attendance_flags($record);
 
         $imported++;
     }
@@ -927,7 +1109,7 @@ function update_attendance_record(
         $records[$date] = [];
     }
 
-    $records[$date][$employeeNumber] = [
+    $record = [
         'employee_number' => $employeeNumber,
         'employee_name' => $employeeName,
         'position' => $position,
@@ -939,6 +1121,8 @@ function update_attendance_record(
         'clock_in_photo' => $existing['clock_in_photo'] ?? '',
         'status' => $clockIn !== '' && $clockOut !== '' ? 'Complete' : 'Incomplete',
     ];
+
+    $records[$date][$employeeNumber] = merge_attendance_flags($record);
 
     ksort($records);
     write_attendance($records);
@@ -1028,7 +1212,7 @@ function record_attendance_action(string $employeeNumber, string $action, string
     }
 
     if (!isset($records[$date][$employeeNumber])) {
-        $records[$date][$employeeNumber] = [
+        $record = [
             'employee_number' => $employeeNumber,
             'employee_name' => $employeeName,
             'position' => $position,
@@ -1040,6 +1224,8 @@ function record_attendance_action(string $employeeNumber, string $action, string
             'clock_in_photo' => '',
             'status' => 'Incomplete',
         ];
+
+        $records[$date][$employeeNumber] = merge_attendance_flags($record);
     }
 
     $record = $records[$date][$employeeNumber];
@@ -1079,7 +1265,7 @@ function record_attendance_action(string $employeeNumber, string $action, string
     }
 
     $record['status'] = $record['clock_in'] !== '' && $record['clock_out'] !== '' ? 'Complete' : 'Incomplete';
-    $records[$date][$employeeNumber] = $record;
+    $records[$date][$employeeNumber] = merge_attendance_flags($record);
     write_attendance($records);
 
     return [

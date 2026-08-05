@@ -856,6 +856,22 @@ body.modal-open {
     font-size: 20px;
 }
 
+.backup-box {
+    margin-bottom: 18px;
+    border-top: 4px solid var(--blue);
+}
+
+.backup-actions {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(220px, auto) minmax(260px, 1fr);
+    align-items: start;
+}
+
+.backup-actions .button {
+    width: 100%;
+}
+
 .primary-admin-box {
     border-top: 4px solid var(--red);
 }
@@ -1136,6 +1152,17 @@ tbody tr:hover {
     color: var(--amber);
 }
 
+.flag-badge {
+    display: inline-block;
+    border-radius: 999px;
+    background: #fdecec;
+    border: 1px solid #efb8b8;
+    color: #8c2525;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 8px;
+}
+
 .empty {
     padding: 28px;
     text-align: center;
@@ -1248,6 +1275,10 @@ tbody tr:hover {
     }
 
     .records-filter-bar {
+        grid-template-columns: 1fr;
+    }
+
+    .backup-actions {
         grid-template-columns: 1fr;
     }
 

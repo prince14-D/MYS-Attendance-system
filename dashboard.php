@@ -11,6 +11,19 @@ $registrationResult = null;
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $adminAction = $_POST['admin_action'] ?? '';
 
+    if ($adminAction === 'download_backup') {
+        $backup = create_json_backup_snapshot();
+
+        if (!$backup['ok']) {
+            $registrationResult = $backup;
+        } else {
+            header('Content-Type: application/json; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $backup['filename'] . '"');
+            echo $backup['json'];
+            exit;
+        }
+    }
+
     if ($adminAction === 'create_department') {
         $registrationResult = register_department($_POST['department_name'] ?? '');
     } elseif ($adminAction === 'update_department') {
@@ -52,6 +65,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $_POST['department_id'] ?? '',
             $_POST['position'] ?? ''
         );
+    } elseif ($adminAction === 'restore_backup') {
+        $registrationResult = restore_from_backup_upload($_FILES['backup_file'] ?? []);
     }
 }
 
@@ -394,6 +409,25 @@ if (!in_array($selectedDate, $dates, true)) {
                     <p class="muted">Create departments, register employees, and import lists.</p>
                 </div>
 
+                <section class="admin-box backup-box">
+                    <h2>Backup and Restore</h2>
+                    <p class="muted">Download a full JSON backup or restore data from a previous backup snapshot.</p>
+
+                    <div class="backup-actions">
+                        <form method="post" class="inline-form">
+                            <input type="hidden" name="admin_action" value="download_backup">
+                            <button class="button secondary" type="submit">Download JSON Backup</button>
+                        </form>
+
+                        <form method="post" enctype="multipart/form-data" class="stacked-form" onsubmit="return confirm('Restore this backup? Current data will be replaced.');">
+                            <input type="hidden" name="admin_action" value="restore_backup">
+                            <label for="backup_file">Restore Backup File</label>
+                            <input id="backup_file" name="backup_file" type="file" accept=".json,application/json" required>
+                            <button class="button danger" type="submit">Restore Backup</button>
+                        </form>
+                    </div>
+                </section>
+
                 <div class="admin-grid">
                     <section class="admin-box">
                         <h2>Create Department</h2>
@@ -648,6 +682,7 @@ if (!in_array($selectedDate, $dates, true)) {
                                     <th>Photo</th>
                                     <th>Clock Out</th>
                                     <th>Worked Hours</th>
+                                    <th>Flags</th>
                                     <th>Status</th>
                                     <th>Action</th>
                                 </tr>
@@ -701,6 +736,25 @@ if (!in_array($selectedDate, $dates, true)) {
                                         </td>
                                         <td><input form="<?= $attendanceFormId ?>_edit" name="clock_out" type="time" step="1" value="<?= h($record['clock_out'] ?? '') ?>"></td>
                                         <td><?= h(worked_hours($record) ?: '-') ?></td>
+                                        <td>
+                                            <?php
+                                                $flags = is_array($record['flags'] ?? null) ? $record['flags'] : [];
+                                                $flagLabels = [];
+
+                                                if (($flags['late'] ?? false) === true) {
+                                                    $flagLabels[] = 'Late ' . (int) ($flags['late_minutes'] ?? 0) . 'm';
+                                                }
+
+                                                if (($flags['early_out'] ?? false) === true) {
+                                                    $flagLabels[] = 'Early Out ' . (int) ($flags['early_out_minutes'] ?? 0) . 'm';
+                                                }
+                                            ?>
+                                            <?php if (count($flagLabels) === 0): ?>
+                                                -
+                                            <?php else: ?>
+                                                <span class="flag-badge"><?= h(implode(' | ', $flagLabels)) ?></span>
+                                            <?php endif; ?>
+                                        </td>
                                         <td>
                                             <span class="badge <?= $record['status'] === 'Complete' ? 'complete' : 'incomplete' ?>">
                                                 <?= h($record['status']) ?>
