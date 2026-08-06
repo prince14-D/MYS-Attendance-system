@@ -202,5 +202,11 @@
         "department_name": "BUDGET",
         "created_at": "2026-07-30 11:29:35",
         "updated_at": "2026-07-30 16:21:49"
+    },
+    "m1-office-staff": {
+        "department_id": "m1-office-staff",
+        "department_name": "M1 OFFICE STAFF",
+        "created_at": "2026-08-06 10:02:11",
+        "updated_at": "2026-08-06 10:02:11"
     }
 }

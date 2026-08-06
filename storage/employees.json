@@ -272,11 +272,11 @@
     "069937": {
         "employee_number": "069937",
         "employee_name": "WILFRED S. K. PAYNE",
-        "position": "Director",
+        "position": "Administrative Assistant",
         "department_id": "am-tvet",
         "department_name": "AM-TVET",
         "registered_at": "2026-08-04 11:36:30",
-        "updated_at": "2026-08-04 11:46:27"
+        "updated_at": "2026-08-06 10:04:24"
     },
     "69940": {
         "employee_number": "69940",
@@ -316,12 +316,12 @@
     },
     "69947": {
         "employee_number": "69947",
-        "employee_name": "HANNAH JOHNSON",
-        "position": "Secreatary",
-        "department_id": "minister-office",
-        "department_name": "Minister Office",
+        "employee_name": "Hannah K Johnson",
+        "position": "Secretary",
+        "department_id": "am-tvet",
+        "department_name": "AM-TVET",
         "registered_at": "2026-07-31 11:49:10",
-        "updated_at": "2026-08-04 11:45:38"
+        "updated_at": "2026-08-06 10:10:22"
     },
     "69949": {
         "employee_number": "69949",
@@ -379,12 +379,12 @@
     },
     "69977": {
         "employee_number": "69977",
-        "employee_name": "JAMES MORLU",
-        "position": "COUNTY COORDINATOR",
-        "department_id": "",
-        "department_name": "Unassigned",
+        "employee_name": "Samuel L Loboe",
+        "position": "Sport Admin",
+        "department_id": "youth-bureau",
+        "department_name": "YOUTH BUREAU",
         "registered_at": "2026-08-04 11:44:51",
-        "updated_at": "2026-08-04 11:45:38"
+        "updated_at": "2026-08-06 09:50:38"
     },
     "69978": {
         "employee_number": "69978",
@@ -811,12 +811,12 @@
     },
     "70068": {
         "employee_number": "70068",
-        "employee_name": "AUGUSTINE N BUNDU",
-        "position": "Internal Auditor",
-        "department_id": "",
-        "department_name": "Unassigned",
+        "employee_name": "Genever N. Brown",
+        "position": "Administrative Assistant",
+        "department_id": "sports-bureau",
+        "department_name": "SPORTS BUREAU",
         "registered_at": "2026-08-04 11:44:27",
-        "updated_at": "2026-08-04 11:45:38"
+        "updated_at": "2026-08-06 09:56:26"
     },
     "70070": {
         "employee_number": "70070",
@@ -883,12 +883,12 @@
     },
     "70081": {
         "employee_number": "70081",
-        "employee_name": "LEVI D MANJO",
-        "position": "Janitor",
-        "department_id": "",
-        "department_name": "Unassigned",
+        "employee_name": "Doyen S. Kieh",
+        "position": "Office Assistant",
+        "department_id": "public-affairs",
+        "department_name": "PUBLIC AFFAIRS",
         "registered_at": "2026-08-04 11:44:27",
-        "updated_at": "2026-08-04 11:45:38"
+        "updated_at": "2026-08-06 09:58:00"
     },
     "70082": {
         "employee_number": "70082",
@@ -1054,12 +1054,12 @@
     },
     "70108": {
         "employee_number": "70108",
-        "employee_name": "JOSEPH DIXON",
-        "position": "Sports Advisor",
-        "department_id": "",
-        "department_name": "Unassigned",
+        "employee_name": "Joseph Dickson",
+        "position": "Sport Admin",
+        "department_id": "sports-bureau",
+        "department_name": "SPORTS BUREAU",
         "registered_at": "2026-08-04 11:44:27",
-        "updated_at": "2026-08-04 11:45:38"
+        "updated_at": "2026-08-06 09:55:37"
     },
     "70109": {
         "employee_number": "70109",
@@ -1128,10 +1128,10 @@
         "employee_number": "70120",
         "employee_name": "LUCY SUNDAY",
         "position": "Office Assistant",
-        "department_id": "",
-        "department_name": "Unassigned",
+        "department_id": "finance",
+        "department_name": "FINANCE",
         "registered_at": "2026-08-04 11:44:27",
-        "updated_at": "2026-08-04 11:45:38"
+        "updated_at": "2026-08-06 10:09:34"
     },
     "70124": {
         "employee_number": "70124",
@@ -1315,12 +1315,12 @@
     },
     "70160": {
         "employee_number": "70160",
-        "employee_name": "PATRICIA ZAYZAY",
-        "position": "Office Assistant",
-        "department_id": "",
-        "department_name": "Unassigned",
+        "employee_name": "Patricia G. Zayzay",
+        "position": "Administrative Assistant",
+        "department_id": "ama-office",
+        "department_name": "AMA OFFICE",
         "registered_at": "2026-08-04 11:44:28",
-        "updated_at": "2026-08-04 11:45:38"
+        "updated_at": "2026-08-06 09:52:47"
     },
     "70161": {
         "employee_number": "70161",
@@ -3027,10 +3027,10 @@
         "employee_number": "800044",
         "employee_name": "Evelyn J. Sims",
         "position": "JANITOIR",
-        "department_id": "",
-        "department_name": "Unassigned",
+        "department_id": "studium-management",
+        "department_name": "STUDIUM MANAGEMENT",
         "registered_at": "2026-08-04 11:44:28",
-        "updated_at": "2026-08-04 11:45:39"
+        "updated_at": "2026-08-06 10:12:30"
     },
     "800045": {
         "employee_number": "800045",
@@ -3085,5 +3085,41 @@
         "department_name": "Unassigned",
         "registered_at": "2026-08-04 11:44:27",
         "updated_at": "2026-08-04 11:45:38"
+    },
+    "70158": {
+        "employee_number": "70158",
+        "employee_name": "Joseph B Sackie",
+        "position": "Liaison Officer",
+        "department_id": "am-tvet",
+        "department_name": "AM-TVET",
+        "registered_at": "2026-08-06 09:46:23",
+        "updated_at": "2026-08-06 09:46:23"
+    },
+    "70065": {
+        "employee_number": "70065",
+        "employee_name": "Amos Kollie",
+        "position": "File Cleake",
+        "department_id": "ama-office",
+        "department_name": "AMA OFFICE",
+        "registered_at": "2026-08-06 09:48:23",
+        "updated_at": "2026-08-06 09:48:23"
+    },
+    "69937": {
+        "employee_number": "69937",
+        "employee_name": "Wilfred S.K Payne",
+        "position": "Administrative Assistant",
+        "department_id": "human-resource-adm",
+        "department_name": "HUMAN RESOURCE-ADM",
+        "registered_at": "2026-08-06 09:54:04",
+        "updated_at": "2026-08-06 09:54:04"
+    },
+    "090112": {
+        "employee_number": "090112",
+        "employee_name": "Mariama Tuzee Toure",
+        "position": "Digital Media Officer",
+        "department_id": "m1-office-staff-s",
+        "department_name": "M1 OFFICE STAFF'S",
+        "registered_at": "2026-08-06 10:02:58",
+        "updated_at": "2026-08-06 10:02:58"
     }
 }
