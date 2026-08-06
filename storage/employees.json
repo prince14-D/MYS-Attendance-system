@@ -3121,5 +3121,32 @@
         "department_name": "M1 OFFICE STAFF'S",
         "registered_at": "2026-08-06 10:02:58",
         "updated_at": "2026-08-06 10:02:58"
+    },
+    "0046": {
+        "employee_number": "0046",
+        "employee_name": "Enoch P. Gibson",
+        "position": "Assistant DMS",
+        "department_id": "sports-bureau",
+        "department_name": "SPORTS BUREAU",
+        "registered_at": "2026-08-06 10:23:11",
+        "updated_at": "2026-08-06 10:23:11"
+    },
+    "80046": {
+        "employee_number": "80046",
+        "employee_name": "Miatta G. Johnson",
+        "position": "Receptionist",
+        "department_id": "minister-office",
+        "department_name": "Minister Office",
+        "registered_at": "2026-08-06 11:03:33",
+        "updated_at": "2026-08-06 11:03:33"
+    },
+    "024116": {
+        "employee_number": "024116",
+        "employee_name": "Hassan G. Sheriff",
+        "position": "Data Analyst Officer",
+        "department_id": "presidents-young-professional-program",
+        "department_name": "PRESIDENTS YOUNG PROFESSIONAL PROGRAM",
+        "registered_at": "2026-08-06 11:10:41",
+        "updated_at": "2026-08-06 11:17:44"
     }
 }

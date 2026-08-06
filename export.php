@@ -313,6 +313,7 @@ function build_pdf_content_for_page(
 
         $content .= "0.84 0.87 0.91 RG\n";
         $content .= pdf_line(38, $y - 12, 828, $y - 12);
+        $content .= "0 0 0 rg\n";
 
         $values = [
             [substr($resolved['employee_number'], 0, 18), 50, 84],
