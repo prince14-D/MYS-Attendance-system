@@ -197,6 +197,44 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             }
         }
 
+        function getLocalClockStatus(employeeNumber) {
+            const baseStatus = employeeClockStatusByNumber[employeeNumber] || { clocked_in: false, clocked_out: false };
+            const status = {
+                clocked_in: Boolean(baseStatus.clocked_in),
+                clocked_out: Boolean(baseStatus.clocked_out)
+            };
+
+            readQueue().forEach((queued) => {
+                if (String(queued.employee_number || '').toUpperCase() !== employeeNumber) {
+                    return;
+                }
+
+                if (queued.action === 'clock_in') {
+                    status.clocked_in = true;
+                }
+
+                if (queued.action === 'clock_out') {
+                    status.clocked_out = true;
+                }
+            });
+
+            return status;
+        }
+
+        function isActionAllowed(employeeNumber, action) {
+            const status = getLocalClockStatus(employeeNumber);
+
+            if (action === 'clock_in') {
+                return !status.clocked_in;
+            }
+
+            if (action === 'clock_out') {
+                return status.clocked_in && !status.clocked_out;
+            }
+
+            return false;
+        }
+
         function syncActionState() {
             const employeeNumber = employeeInput?.value.trim().toUpperCase() || '';
 
@@ -218,7 +256,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 return;
             }
 
-            const status = employeeClockStatusByNumber[employeeNumber] || { clocked_in: false, clocked_out: false };
+            const status = getLocalClockStatus(employeeNumber);
 
             if (status.clocked_out) {
                 setActionState({
@@ -400,6 +438,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 return false;
             }
 
+            if (!isActionAllowed(employeeNumber, action)) {
+                cameraMessage.textContent = action === 'clock_in'
+                    ? 'Clock in has already been recorded for today.'
+                    : 'You can clock out only once after a valid clock in.';
+                return false;
+            }
+
             if (action === 'clock_in' && photoInput.value === '') {
                 cameraCard.hidden = false;
                 cameraMessage.textContent = 'Please take your photo before clocking in.';
@@ -418,9 +463,34 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             const queue = readQueue();
             queue.push(record);
             writeQueue(queue);
+
+            if (!employeeClockStatusByNumber[employeeNumber]) {
+                employeeClockStatusByNumber[employeeNumber] = { clocked_in: false, clocked_out: false };
+            }
+
+            if (action === 'clock_in') {
+                employeeClockStatusByNumber[employeeNumber].clocked_in = true;
+            }
+
+            if (action === 'clock_out') {
+                employeeClockStatusByNumber[employeeNumber].clocked_out = true;
+            }
+
+            syncActionState();
             showLocalConfirmation(record, employee);
 
             return true;
+        }
+
+        function isPermanentSyncFailure(message) {
+            const normalized = String(message || '').toLowerCase();
+
+            return normalized.includes('already clocked in')
+                || normalized.includes('already clocked out')
+                || normalized.includes('must clock in first')
+                || normalized.includes('is not registered')
+                || normalized.includes('invalid attendance action')
+                || normalized.includes('invalid time');
         }
 
         async function syncOfflineQueue() {
@@ -448,11 +518,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 }
 
                 const payload = await response.json();
-                const completed = new Set((payload.results || [])
-                    .filter((result) => result.ok)
-                    .map((result) => result.id));
-                const remaining = queue.filter((record) => !completed.has(record.id));
+                const completed = new Set();
+                const permanentFailures = new Set();
+
+                (payload.results || []).forEach((result) => {
+                    if (result.ok) {
+                        completed.add(result.id);
+                        return;
+                    }
+
+                    if (isPermanentSyncFailure(result.message || '')) {
+                        permanentFailures.add(result.id);
+                    }
+                });
+
+                const remaining = queue.filter((record) => !completed.has(record.id) && !permanentFailures.has(record.id));
                 writeQueue(remaining);
+                syncActionState();
             } catch (error) {
                 updateOfflineStatus();
             }
@@ -529,6 +611,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         attendanceForm?.addEventListener('submit', (event) => {
             const action = event.submitter?.value;
+            const employeeNumber = employeeInput?.value.trim().toUpperCase() || '';
+
+            if (!employeesByNumber[employeeNumber]) {
+                event.preventDefault();
+                cameraMessage.textContent = 'This employee number is not registered on this device.';
+                return;
+            }
+
+            if (!isActionAllowed(employeeNumber, action)) {
+                event.preventDefault();
+                cameraMessage.textContent = action === 'clock_in'
+                    ? 'Clock in has already been recorded for today.'
+                    : 'You can clock out only once after a valid clock in.';
+                syncActionState();
+                return;
+            }
 
             if (action === 'clock_in' && photoInput.value === '') {
                 event.preventDefault();
