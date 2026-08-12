@@ -6,7 +6,7 @@ require_once __DIR__ . '/auth.php';
 $error = '';
 
 if (admin_logged_in()) {
-    redirect('dashboard.php');
+    redirect('overview.php');
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
@@ -14,7 +14,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $password = $_POST['password'] ?? '';
 
     if (attempt_admin_login($username, $password)) {
-        redirect('dashboard.php');
+        redirect('overview.php');
     }
 
     $error = 'Invalid admin username or password.';
@@ -26,6 +26,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Admin Login - <?= h(APP_NAME) ?></title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
     <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body>
@@ -43,25 +44,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             </nav>
         </header>
 
-        <section class="hero">
-            <div class="panel">
-                <h1>Admin Login</h1>
-                <p class="muted">Sign in to view and export daily attendance records.</p>
+        <section class="hero admin-login-hero">
+            <div class="panel admin-login-panel">
+                <div class="admin-login-head">
+                    <span class="eyebrow">Secure Access</span>
+                    <h1>Admin Login</h1>
+                    <p class="muted">Sign in to manage attendance records, reports, and exports.</p>
+                </div>
 
                 <?php if ($error !== ''): ?>
                     <div class="alert error"><?= h($error) ?></div>
                 <?php endif; ?>
 
-                <form method="post">
+                <form method="post" class="stacked-form admin-login-form">
                     <label for="username">Username</label>
-                    <input id="username" name="username" type="text" required autofocus>
-
-                    <div style="height: 14px;"></div>
+                    <input class="form-control" id="username" name="username" type="text" required autofocus>
 
                     <label for="password">Password</label>
-                    <input id="password" name="password" type="password" required>
+                    <input class="form-control" id="password" name="password" type="password" required>
 
-                    <div class="actions">
+                    <div class="actions admin-login-actions">
                         <button class="button primary" type="submit">Login</button>
                         <a class="button secondary" href="index.php">Back</a>
                     </div>

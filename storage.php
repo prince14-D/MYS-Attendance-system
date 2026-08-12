@@ -1757,6 +1757,34 @@ function attendance_for_date(string $date, string $departmentId = ''): array
     return $dayRecords;
 }
 
+function attendance_for_month(string $month, string $departmentId = ''): array
+{
+    if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+        return [];
+    }
+
+    $records = read_attendance();
+    $monthRecords = [];
+
+    foreach ($records as $date => $_dayRecords) {
+        if (!str_starts_with((string) $date, $month . '-')) {
+            continue;
+        }
+
+        $dayRecords = attendance_for_date((string) $date, $departmentId);
+
+        if (count($dayRecords) > 0) {
+            $monthRecords[$date] = $dayRecords;
+        } else {
+            $monthRecords[$date] = [];
+        }
+    }
+
+    ksort($monthRecords);
+
+    return $monthRecords;
+}
+
 function all_attendance_dates(): array
 {
     $records = read_attendance();

@@ -39,6 +39,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="assets/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="assets/app-icon.svg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
     <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body>
@@ -57,14 +58,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         </header>
 
         <section class="hero">
-            <div class="clock-panel">
-                <div class="time-area">
+            <div class="clock-panel bootstrap-home-clock-panel">
+                <div class="time-area bootstrap-home-time-area">
                     <div class="date-label" id="currentDate"><?= h(date('l, F j, Y')) ?></div>
                     <div class="live-time" id="currentTime"><?= h(date('H:i:s')) ?></div>
                     <div class="time-note">Employee attendance clock</div>
                 </div>
 
-                <div class="form-area">
+                <div class="form-area bootstrap-home-form-area">
                     <?php if ($result !== null && $result['ok']): ?>
                         <div class="confirmation-screen">
                             <div class="confirmation-label"><?= h($result['action'] === 'clock_in' ? 'Clock In' : 'Clock Out') ?></div>
@@ -94,7 +95,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     <?php else: ?>
                         <h1>Clock In / Out</h1>
                         <p class="muted">Enter your registered employee number. Clock in requires a quick photo before submitting.</p>
-                        <div class="offline-status" id="offlineStatus">
+                        <div class="offline-status bootstrap-home-offline" id="offlineStatus">
                             <span class="status-dot" id="statusDot"></span>
                             <span id="statusText">Checking connection...</span>
                             <strong id="queueCount"></strong>
@@ -113,7 +114,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
                         <form method="post" autocomplete="off" id="attendanceForm">
                             <label for="employee_number">Employee Number</label>
-                            <input id="employee_number" name="employee_number" type="text" inputmode="text" placeholder="Example: EMP001" required autofocus>
+                            <input class="form-control" id="employee_number" name="employee_number" type="text" inputmode="text" placeholder="Example: EMP001" required autofocus>
                             <p class="muted" id="actionHint">Enter your employee number to continue.</p>
                             <input id="clockInPhoto" name="clock_in_photo" type="hidden">
 

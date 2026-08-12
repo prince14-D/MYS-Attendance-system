@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/overview.php';
+return;
+
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/storage.php';
 
@@ -78,10 +81,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 }
 
 $selectedDate = $_GET['date'] ?? date('Y-m-d');
+$selectedMonth = $_GET['month'] ?? date('Y-m');
 $selectedDepartment = normalize_department_id($_GET['department'] ?? '');
 
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $selectedDate)) {
     $selectedDate = date('Y-m-d');
+}
+
+if (!preg_match('/^\d{4}-\d{2}$/', $selectedMonth)) {
+    $selectedMonth = date('Y-m');
 }
 
 $selectedDepartmentData = $selectedDepartment !== '' ? find_department($selectedDepartment) : null;
@@ -90,7 +98,36 @@ if ($selectedDepartment !== '' && $selectedDepartmentData === null) {
     $selectedDepartment = '';
 }
 
+$allowedAdminPages = [
+    'home',
+    'register_employee',
+    'employees',
+    'attendance_log',
+    'create_department',
+    'backup_restore',
+    'geofence',
+    'monthly_report',
+];
+
+$activePage = $_GET['page'] ?? 'home';
+
+if (!in_array($activePage, $allowedAdminPages, true)) {
+    $activePage = 'home';
+}
+
+$adminPageLinks = [
+    'home' => ['label' => 'Overview', 'href' => 'overview.php'],
+    'register_employee' => ['label' => 'Register Employee', 'href' => 'register_employee.php'],
+    'employees' => ['label' => 'View All Employee', 'href' => 'employees.php'],
+    'attendance_log' => ['label' => 'Attendance Log', 'href' => 'attendance_log.php?date=' . urlencode($selectedDate) . '&department=' . urlencode($selectedDepartment)],
+    'create_department' => ['label' => 'Create Department', 'href' => 'create_department.php'],
+    'backup_restore' => ['label' => 'Backup & Restore', 'href' => 'backup_restore.php'],
+    'geofence' => ['label' => 'Setup Geofence', 'href' => 'geofence.php'],
+    'monthly_report' => ['label' => 'Month Report Audit', 'href' => 'monthly_report.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
+];
+
 $records = attendance_for_date($selectedDate, $selectedDepartment);
+$monthlyRecords = attendance_for_month($selectedMonth, $selectedDepartment);
 $dates = all_attendance_dates();
 $employees = all_employees();
 $departments = all_departments();
@@ -201,6 +238,94 @@ foreach ($profileReviews as $record) {
 if (!in_array($selectedDate, $dates, true)) {
     array_unshift($dates, $selectedDate);
 }
+
+$monthlyReportDays = [];
+$monthlyTotals = [
+    'records' => 0,
+    'complete' => 0,
+    'incomplete' => 0,
+    'late' => 0,
+    'worked_minutes' => 0,
+];
+
+$monthStart = DateTimeImmutable::createFromFormat('Y-m-d', $selectedMonth . '-01');
+$daysInMonth = $monthStart ? (int) $monthStart->format('t') : 0;
+
+for ($day = 1; $day <= $daysInMonth; $day++) {
+    $date = sprintf('%s-%02d', $selectedMonth, $day);
+    $dayRecords = $monthlyRecords[$date] ?? [];
+    $completeCount = 0;
+    $lateCount = 0;
+    $workedMinutes = 0;
+
+    foreach ($dayRecords as $record) {
+        $monthlyTotals['records']++;
+
+        if (($record['status'] ?? '') === 'Complete') {
+            $completeCount++;
+            $monthlyTotals['complete']++;
+        } else {
+            $monthlyTotals['incomplete']++;
+        }
+
+        $flags = is_array($record['flags'] ?? null) ? $record['flags'] : [];
+
+        if (($flags['late'] ?? false) === true) {
+            $lateCount++;
+            $monthlyTotals['late']++;
+        }
+
+        $worked = worked_hours($record);
+
+        if ($worked !== '') {
+            [$hours, $minutes] = array_map('intval', explode(':', $worked));
+            $workedMinutes += ($hours * 60) + $minutes;
+            $monthlyTotals['worked_minutes'] += ($hours * 60) + $minutes;
+        }
+    }
+
+    $monthlyReportDays[] = [
+        'date' => $date,
+        'day_label' => date('j', strtotime($date)),
+        'weekday' => date('D', strtotime($date)),
+        'total' => count($dayRecords),
+        'complete' => $completeCount,
+        'incomplete' => max(0, count($dayRecords) - $completeCount),
+        'late' => $lateCount,
+        'worked_minutes' => $workedMinutes,
+    ];
+}
+
+$monthlySummaryCards = [
+    ['label' => 'Total Records', 'value' => (string) $monthlyTotals['records'], 'note' => 'All attendance entries in month'],
+    ['label' => 'Complete', 'value' => (string) $monthlyTotals['complete'], 'note' => 'Finished shifts'],
+    ['label' => 'Late Arrivals', 'value' => (string) $monthlyTotals['late'], 'note' => 'Clock-ins after shift start'],
+    ['label' => 'Incomplete', 'value' => (string) $monthlyTotals['incomplete'], 'note' => 'Missing clock-out or clock-in'],
+];
+
+$monthlyMaxBar = max(1, ...array_map(static fn (array $item): int => max((int) $item['total'], (int) $item['complete'], (int) $item['late'], 1), $monthlyReportDays));
+
+$monthlyAverageWorked = $monthlyTotals['complete'] > 0 ? (int) floor($monthlyTotals['worked_minutes'] / $monthlyTotals['complete']) : 0;
+
+$formatMinutes = static function (int $minutes): string {
+    $hours = intdiv(max(0, $minutes), 60);
+    $remaining = max(0, $minutes) % 60;
+    return sprintf('%02d:%02d', $hours, $remaining);
+};
+
+$employeeSearchRows = [];
+
+foreach ($employees as $employeeIndex => $employee) {
+    $employeeSearchRows[] = [
+        'index' => $employeeIndex,
+        'haystack' => strtolower(implode(' ', [
+            (string) ($employee['employee_number'] ?? ''),
+            (string) ($employee['employee_name'] ?? ''),
+            (string) ($employee['position'] ?? ''),
+            (string) ($employee['department_name'] ?? ''),
+        ])),
+    ];
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -210,7 +335,7 @@ if (!in_array($selectedDate, $dates, true)) {
     <title>Daily Records - <?= h(APP_NAME) ?></title>
     <link rel="stylesheet" href="assets/styles.css">
 </head>
-<body>
+<body data-admin-page="<?= h($activePage) ?>">
     
     <main class="page">
         <header class="topbar">
@@ -227,13 +352,48 @@ if (!in_array($selectedDate, $dates, true)) {
             </nav>
         </header>
 
-        <section class="content admin-dashboard">
+        <div class="admin-workspace">
+            <aside class="admin-sidebar" aria-label="Admin pages">
+                <div class="admin-sidebar-title">
+                    <span class="eyebrow">Admin Pages</span>
+                    <h2>Workspace</h2>
+                </div>
+
+                <nav class="admin-sidebar-nav">
+                    <?php foreach ($adminPageLinks as $pageKey => $pageLink): ?>
+                        <a class="sidebar-button <?= $activePage === $pageKey ? 'active' : '' ?>" href="<?= h($pageLink['href']) ?>">
+                            <?= h($pageLink['label']) ?>
+                        </a>
+                    <?php endforeach; ?>
+                </nav>
+            </aside>
+
+        <section class="content admin-dashboard" data-admin-page="<?= h($activePage) ?>">
             <div class="dashboard-hero panel">
                 <div class="dashboard-title">
                     <span class="eyebrow">Admin Dashboard</span>
-                    <h1>Daily Attendance</h1>
+                    <h1>
+                        <?php
+                            echo match ($activePage) {
+                                'register_employee' => 'Register Employee',
+                                'employees' => 'View All Employees',
+                                'attendance_log' => 'Attendance Log',
+                                'create_department' => 'Create Department',
+                                'backup_restore' => 'Backup and Restore',
+                                'geofence' => 'Setup Geofence',
+                                'monthly_report' => 'Monthly Report Audit',
+                                default => 'Daily Attendance',
+                            };
+                        ?>
+                    </h1>
                     <p class="muted">
-                        Viewing <?= h($activeFilterLabel) ?> for <?= h($selectedDate) ?>.
+                        <?php if ($activePage === 'monthly_report'): ?>
+                            Viewing <?= h($activeFilterLabel) ?> for <?= h(date('F Y', strtotime($selectedMonth . '-01'))) ?>.
+                        <?php elseif ($activePage === 'employees' || $activePage === 'register_employee' || $activePage === 'create_department' || $activePage === 'backup_restore' || $activePage === 'geofence'): ?>
+                            Manage staff, setup, and backups from dedicated workspace pages.
+                        <?php else: ?>
+                            Viewing <?= h($activeFilterLabel) ?> for <?= h($selectedDate) ?>.
+                        <?php endif; ?>
                     </p>
                 </div>
 
@@ -289,6 +449,125 @@ if (!in_array($selectedDate, $dates, true)) {
                     <strong><?= count($departments) ?></strong>
                     <small>Available filters</small>
                 </div>
+            </div>
+
+            <div class="dashboard-section monthly-report-section" data-admin-page="monthly_report">
+                <div class="section-heading">
+                    <div>
+                        <span class="eyebrow">Analysis</span>
+                        <h2>Monthly Report</h2>
+                    </div>
+                    <p class="muted">Monthly attendance overview for <?= h(date('F Y', strtotime($selectedMonth . '-01'))) ?>.</p>
+                </div>
+
+                <section class="admin-box analysis-box">
+                    <form method="get" class="monthly-report-form">
+                        <div>
+                            <label for="month">Month</label>
+                            <input id="month" name="month" type="month" value="<?= h($selectedMonth) ?>">
+                        </div>
+                        <div>
+                            <label for="month_department">Department</label>
+                            <select id="month_department" name="department">
+                                <option value="">All Departments</option>
+                                <?php foreach ($departments as $department): ?>
+                                    <option value="<?= h($department['department_id']) ?>" <?= $selectedDepartment === $department['department_id'] ? 'selected' : '' ?>>
+                                        <?= h($department['department_name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <button class="button primary" type="submit">View Report</button>
+                        <button class="button secondary" type="button" data-print-mode="monthly">Print Monthly</button>
+                    </form>
+
+                    <div class="export-links monthly-export-links">
+                        <a class="link-button" href="export.php?report=monthly&format=csv&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">CSV</a>
+                        <a class="link-button" href="export.php?report=monthly&format=xls&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">Excel</a>
+                        <a class="link-button" href="export.php?report=monthly&format=pdf&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">PDF</a>
+                    </div>
+
+                    <div class="monthly-summary-grid" aria-label="Monthly attendance summary">
+                        <?php foreach ($monthlySummaryCards as $card): ?>
+                            <div class="stat-card monthly-stat-card">
+                                <span><?= h($card['label']) ?></span>
+                                <strong><?= h($card['value']) ?></strong>
+                                <small><?= h($card['note']) ?></small>
+                            </div>
+                        <?php endforeach; ?>
+                        <div class="stat-card monthly-stat-card">
+                            <span>Average Worked</span>
+                            <strong><?= h($formatMinutes($monthlyAverageWorked)) ?></strong>
+                            <small>Per completed record</small>
+                        </div>
+                    </div>
+
+                    <div class="monthly-chart-wrap">
+                        <div class="monthly-chart" aria-label="Monthly attendance bar chart">
+                            <?php foreach ($monthlyReportDays as $day): ?>
+                                <?php
+                                    $completeHeight = (int) round(($day['complete'] / $monthlyMaxBar) * 100);
+                                    $lateHeight = (int) round(($day['late'] / $monthlyMaxBar) * 100);
+                                    $totalHeight = (int) round(($day['total'] / $monthlyMaxBar) * 100);
+                                ?>
+                                <div class="monthly-chart-day" title="<?= h($day['date']) ?>: <?= $day['total'] ?> record<?= $day['total'] === 1 ? '' : 's' ?>, <?= $day['late'] ?> late">
+                                    <div class="monthly-chart-bars" aria-hidden="true">
+                                        <div class="monthly-chart-bar-group">
+                                            <div class="monthly-chart-bar-track">
+                                                <div class="monthly-chart-bar monthly-chart-bar-complete" style="height: <?= $completeHeight ?>%;"></div>
+                                            </div>
+                                            <span>Present</span>
+                                        </div>
+                                        <div class="monthly-chart-bar-group">
+                                            <div class="monthly-chart-bar-track monthly-chart-bar-track-late">
+                                                <div class="monthly-chart-bar monthly-chart-bar-late" style="height: <?= $lateHeight ?>%;"></div>
+                                            </div>
+                                            <span>Late</span>
+                                        </div>
+                                    </div>
+                                    <div class="monthly-chart-meta">
+                                        <strong><?= h($day['day_label']) ?></strong>
+                                        <span><?= h($day['weekday']) ?></span>
+                                        <small>Total <?= $day['total'] ?> | Incomplete <?= $day['incomplete'] ?></small>
+                                    </div>
+                                    <div class="monthly-chart-total" style="height: <?= $totalHeight ?>%;"></div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php if (count($monthlyReportDays) === 0): ?>
+                            <div class="empty small-empty">No monthly attendance data found for this month.</div>
+                        <?php endif; ?>
+                    </div>
+
+                    <?php if (count($monthlyReportDays) > 0): ?>
+                        <div class="mini-table-wrap monthly-summary-table-wrap">
+                            <table class="monthly-summary-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Total</th>
+                                        <th>Present</th>
+                                        <th>Late</th>
+                                        <th>Incomplete</th>
+                                        <th>Worked Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($monthlyReportDays as $day): ?>
+                                        <tr>
+                                            <td><?= h($day['date']) ?></td>
+                                            <td><?= $day['total'] ?></td>
+                                            <td><?= $day['complete'] ?></td>
+                                            <td><?= $day['late'] ?></td>
+                                            <td><?= $day['incomplete'] ?></td>
+                                            <td><?= h($formatMinutes($day['worked_minutes'])) ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </section>
             </div>
 
             <?php if ($registrationResult !== null): ?>
@@ -408,7 +687,7 @@ if (!in_array($selectedDate, $dates, true)) {
                 <?php endif; ?>
             </section>
 
-            <div class="dashboard-section">
+            <div class="dashboard-section setup-section">
                 <div class="section-heading">
                     <div>
                         <span class="eyebrow">Setup</span>
@@ -417,7 +696,7 @@ if (!in_array($selectedDate, $dates, true)) {
                     <p class="muted">Create departments, register employees, and import lists.</p>
                 </div>
 
-                <section class="admin-box backup-box">
+                <section class="admin-box backup-box" data-admin-page="geofence">
                     <h2>Clock-in Geofence</h2>
                     <p class="muted">Require staff to be inside a location radius before clock-in.</p>
 
@@ -480,7 +759,7 @@ if (!in_array($selectedDate, $dates, true)) {
                     </form>
                 </section>
 
-                <section class="admin-box backup-box">
+                <section class="admin-box backup-box" data-admin-page="backup_restore">
                     <h2>Backup and Restore</h2>
                     <p class="muted">Download a full JSON backup or restore data from a previous backup snapshot.</p>
 
@@ -500,7 +779,7 @@ if (!in_array($selectedDate, $dates, true)) {
                 </section>
 
                 <div class="admin-grid">
-                    <section class="admin-box">
+                    <section class="admin-box" data-admin-page="create_department">
                         <h2>Create Department</h2>
                         <p class="muted">Create departments before assigning employees.</p>
 
@@ -512,7 +791,7 @@ if (!in_array($selectedDate, $dates, true)) {
                         </form>
                     </section>
 
-                    <section class="admin-box primary-admin-box">
+                    <section class="admin-box primary-admin-box" data-admin-page="register_employee">
                         <h2>Register Employee</h2>
                         <p class="muted">Add the employee name and number before they use the clock screen.</p>
 
@@ -539,7 +818,7 @@ if (!in_array($selectedDate, $dates, true)) {
                         </form>
                     </section>
 
-                    <section class="admin-box import-box">
+                    <section class="admin-box import-box" data-admin-page="register_employee">
                         <h2>Import Employees</h2>
                         <p class="muted">Upload Employee Number, Employee Name, Position, and Department columns.</p>
 
@@ -551,7 +830,7 @@ if (!in_array($selectedDate, $dates, true)) {
                         </form>
                     </section>
 
-                    <section class="admin-box import-box">
+                    <section class="admin-box import-box" data-admin-page="register_employee">
                         <h2>Import Attendance</h2>
                         <p class="muted">Upload Employee Number, Date, Position, Department, Clock In, and Clock Out columns.</p>
 
@@ -565,9 +844,9 @@ if (!in_array($selectedDate, $dates, true)) {
                 </div>
             </div>
 
-            <div class="dashboard-section">
+            <div class="dashboard-section" data-admin-page="employees">
                 <div class="admin-grid directory-grid">
-                    <section class="admin-box wide-admin-box">
+                    <section class="admin-box wide-admin-box" data-admin-page="employees">
                         <div class="toolbar compact-toolbar">
                             <div>
                                 <span class="eyebrow">Departments</span>
@@ -613,7 +892,7 @@ if (!in_array($selectedDate, $dates, true)) {
                         <?php endif; ?>
                     </section>
 
-                    <section class="admin-box wide-admin-box employees-box">
+                    <section class="admin-box wide-admin-box employees-box" data-admin-page="employees">
                         <div class="toolbar compact-toolbar">
                             <div>
                                 <span class="eyebrow">Employees</span>
@@ -622,6 +901,14 @@ if (!in_array($selectedDate, $dates, true)) {
                             </div>
                             <button class="button secondary" type="button" data-print-mode="employees">Print Employees</button>
                         </div>
+
+                        <div class="records-filter-bar staff-filter-bar" aria-label="Staff search">
+                            <div class="records-filter-item search-item">
+                                <label for="employeeSearch">Search Staff</label>
+                                <input id="employeeSearch" type="search" placeholder="Search number, name, position, department">
+                            </div>
+                        </div>
+                        <div class="records-filter-summary" id="employeeFilterSummary" role="status" aria-live="polite"></div>
 
                         <?php if (count($employees) === 0): ?>
                             <div class="empty small-empty">No employees registered yet.</div>
@@ -639,7 +926,15 @@ if (!in_array($selectedDate, $dates, true)) {
                                     </thead>
                                     <tbody>
                                         <?php foreach ($employees as $employeeIndex => $employee): ?>
-                                            <tr>
+                                            <?php
+                                                $employeeSearch = strtolower(implode(' ', [
+                                                    (string) ($employee['employee_number'] ?? ''),
+                                                    (string) ($employee['employee_name'] ?? ''),
+                                                    (string) ($employee['position'] ?? ''),
+                                                    (string) ($employee['department_name'] ?? ''),
+                                                ]));
+                                            ?>
+                                            <tr data-employee-row data-employee-search="<?= h($employeeSearch) ?>">
                                                 <?php $employeeFormId = 'employee_' . $safe_form_id((string) $employee['employee_number']) . '_' . $employeeIndex . '_edit'; ?>
                                                 <td>
                                                     <form id="<?= h($employeeFormId) ?>" method="post" class="inline-form">
@@ -673,12 +968,13 @@ if (!in_array($selectedDate, $dates, true)) {
                                     </tbody>
                                 </table>
                             </div>
+                            <div class="empty small-empty" id="employeeFilterEmpty" hidden>No staff match your search.</div>
                         <?php endif; ?>
                     </section>
                 </div>
             </div>
 
-            <div class="dashboard-section">
+            <div class="dashboard-section" data-admin-page="employees">
                 <div class="section-heading">
                     <div>
                         <span class="eyebrow">Review</span>
@@ -708,7 +1004,7 @@ if (!in_array($selectedDate, $dates, true)) {
                 <?php endif; ?>
             </div>
 
-            <div class="records-panel panel">
+            <div class="records-panel panel" data-admin-page="attendance_log">
                 <div class="toolbar records-toolbar">
                     <div>
                         <span class="eyebrow">Records</span>
@@ -849,6 +1145,7 @@ if (!in_array($selectedDate, $dates, true)) {
                 <?php endif; ?>
             </div>
         </section>
+        </div>
     </main>
 
     <div class="profile-modal" id="profileModal" hidden>
@@ -961,6 +1258,10 @@ if (!in_array($selectedDate, $dates, true)) {
         const recordsFilterSummary = document.getElementById('recordsFilterSummary');
         const recordsFilterEmpty = document.getElementById('recordsFilterEmpty');
         const recordRows = Array.from(document.querySelectorAll('[data-record-row]'));
+        const employeeSearch = document.getElementById('employeeSearch');
+        const employeeFilterSummary = document.getElementById('employeeFilterSummary');
+        const employeeFilterEmpty = document.getElementById('employeeFilterEmpty');
+        const employeeRows = Array.from(document.querySelectorAll('[data-employee-row]'));
         const geofenceLatitudeInput = document.getElementById('geofence_latitude');
         const geofenceLongitudeInput = document.getElementById('geofence_longitude');
         const useCurrentGeofenceLocationButton = document.getElementById('useCurrentGeofenceLocation');
@@ -1001,6 +1302,37 @@ if (!in_array($selectedDate, $dates, true)) {
         recordSearch?.addEventListener('input', applyRecordsFilter);
         recordStatusFilter?.addEventListener('change', applyRecordsFilter);
         applyRecordsFilter();
+
+        function applyEmployeeFilter() {
+            if (employeeRows.length === 0) {
+                return;
+            }
+
+            const searchValue = (employeeSearch?.value || '').trim().toLowerCase();
+            let visibleCount = 0;
+
+            employeeRows.forEach((row) => {
+                const haystack = String(row.getAttribute('data-employee-search') || '');
+                const isVisible = searchValue === '' || haystack.includes(searchValue);
+
+                row.hidden = !isVisible;
+
+                if (isVisible) {
+                    visibleCount += 1;
+                }
+            });
+
+            if (employeeFilterSummary) {
+                employeeFilterSummary.textContent = `${visibleCount} of ${employeeRows.length} staff shown`;
+            }
+
+            if (employeeFilterEmpty) {
+                employeeFilterEmpty.hidden = visibleCount !== 0;
+            }
+        }
+
+        employeeSearch?.addEventListener('input', applyEmployeeFilter);
+        applyEmployeeFilter();
 
         useCurrentGeofenceLocationButton?.addEventListener('click', () => {
             if (!('geolocation' in navigator)) {

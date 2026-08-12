@@ -3148,5 +3148,14 @@
         "department_name": "PRESIDENTS YOUNG PROFESSIONAL PROGRAM",
         "registered_at": "2026-08-06 11:10:41",
         "updated_at": "2026-08-06 11:17:44"
+    },
+    "290707": {
+        "employee_number": "290707",
+        "employee_name": "Prince W Dahn Jr",
+        "position": "Human Resource IT Officer",
+        "department_id": "human-resource-adm",
+        "department_name": "HUMAN RESOURCE-ADM",
+        "registered_at": "2026-08-12 23:02:05",
+        "updated_at": "2026-08-12 23:02:05"
     }
 }
