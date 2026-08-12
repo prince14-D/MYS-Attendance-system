@@ -5,8 +5,19 @@ require_once __DIR__ . '/config.php';
 
 function read_attendance(): array
 {
-    $contents = file_get_contents(ATTENDANCE_FILE);
-    $records = json_decode($contents ?: '[]', true);
+    $handle = fopen(ATTENDANCE_FILE, 'c+');
+
+    if (!$handle) {
+        throw new RuntimeException('Unable to open attendance storage.');
+    }
+
+    flock($handle, LOCK_SH);
+    rewind($handle);
+    $contents = stream_get_contents($handle) ?: '[]';
+    flock($handle, LOCK_UN);
+    fclose($handle);
+
+    $records = json_decode($contents, true);
 
     return is_array($records) ? $records : [];
 }
@@ -26,6 +37,35 @@ function write_attendance(array $records): void
     fflush($handle);
     flock($handle, LOCK_UN);
     fclose($handle);
+}
+
+function mutate_attendance(callable $mutator): mixed
+{
+    $handle = fopen(ATTENDANCE_FILE, 'c+');
+
+    if (!$handle) {
+        throw new RuntimeException('Unable to open attendance storage.');
+    }
+
+    flock($handle, LOCK_EX);
+    rewind($handle);
+    $contents = stream_get_contents($handle) ?: '[]';
+    $records = json_decode($contents, true);
+
+    if (!is_array($records)) {
+        $records = [];
+    }
+
+    $result = $mutator($records);
+
+    ftruncate($handle, 0);
+    rewind($handle);
+    fwrite($handle, json_encode($records, JSON_PRETTY_PRINT));
+    fflush($handle);
+    flock($handle, LOCK_UN);
+    fclose($handle);
+
+    return $result;
 }
 
 function read_employees(): array
@@ -1393,6 +1433,21 @@ function save_clock_in_photo(string $photoData, string $employeeNumber, string $
     return 'storage/photos/' . $filename;
 }
 
+function delete_clock_in_photo_file(string $relativePath): void
+{
+    $relativePath = trim($relativePath);
+
+    if ($relativePath === '' || !str_starts_with($relativePath, 'storage/photos/')) {
+        return;
+    }
+
+    $absolutePath = __DIR__ . '/' . $relativePath;
+
+    if (is_file($absolutePath)) {
+        @unlink($absolutePath);
+    }
+}
+
 function format_minutes_duration(int $minutes): string
 {
     $minutes = max(0, $minutes);
@@ -1432,118 +1487,142 @@ function record_attendance_action(string $employeeNumber, string $action, string
     $position = $employee['position'] ?? '';
     $departmentId = $employee['department_id'] ?? '';
     $departmentName = $employee['department_name'] ?? 'Unassigned';
-    $records = read_attendance();
     $recordedAt ??= new DateTimeImmutable('now');
     $date = $recordedAt->format('Y-m-d');
     $time = $recordedAt->format('H:i:s');
 
-    if (!isset($records[$date])) {
-        $records[$date] = [];
-    }
-
-    if (!isset($records[$date][$employeeNumber])) {
-        $record = [
-            'employee_number' => $employeeNumber,
-            'employee_name' => $employeeName,
-            'position' => $position,
-            'department_id' => $departmentId,
-            'department_name' => $departmentName,
-            'date' => $date,
-            'clock_in' => '',
-            'clock_out' => '',
-            'clock_in_photo' => '',
-            'status' => 'Incomplete',
-        ];
-
-        $records[$date][$employeeNumber] = merge_attendance_flags($record);
-    }
-
-    $record = $records[$date][$employeeNumber];
-    $record['employee_name'] = $employeeName;
-    $record['position'] = $position;
-    $record['department_id'] = $departmentId;
-    $record['department_name'] = $departmentName;
+    $savedClockInPhoto = '';
+    $validLocation = null;
 
     if ($action === 'clock_in') {
-        if ($record['clock_in'] !== '') {
-            return ['ok' => false, 'message' => 'This employee has already clocked in today.'];
-        }
-
         $geofenceValidation = validate_clock_in_geofence($clockInLocation);
 
         if (!$geofenceValidation['ok']) {
             return ['ok' => false, 'message' => (string) ($geofenceValidation['message'] ?? 'Unable to validate clock-in location.')];
         }
 
+        $validLocation = $geofenceValidation['location'] ?? null;
+
         try {
-            $record['clock_in_photo'] = save_clock_in_photo($photoData, $employeeNumber, $date, $time);
+            $savedClockInPhoto = save_clock_in_photo($photoData, $employeeNumber, $date, $time);
         } catch (InvalidArgumentException | RuntimeException $exception) {
             return ['ok' => false, 'message' => $exception->getMessage()];
         }
-
-        $validLocation = $geofenceValidation['location'] ?? null;
-
-        if (is_array($validLocation)) {
-            $record['clock_in_latitude'] = $validLocation['latitude'] ?? null;
-            $record['clock_in_longitude'] = $validLocation['longitude'] ?? null;
-            $record['clock_in_accuracy_m'] = $validLocation['accuracy_meters'] ?? null;
-        }
-
-        $record['clock_in'] = $time;
-        $clockInFlags = attendance_flags_for_times($date, $time, '');
-        $lateMinutes = (int) ($clockInFlags['late_minutes'] ?? 0);
-        $message = 'Clock in recorded for ' . $employeeName . ' at ' . $time . '.';
-        $title = 'Welcome to work';
-        $body = 'Welcome to work this morning. Your clock in has been recorded successfully.';
-
-        if ($lateMinutes > 0) {
-            $lateDuration = format_minutes_duration($lateMinutes);
-            $title = 'Clock in recorded';
-            $body = 'Clock in recorded. You are late by ' . $lateDuration . '.';
-        }
-    } else {
-        if ($record['clock_in'] === '') {
-            return ['ok' => false, 'message' => 'You must clock in first before you can clock out.'];
-        }
-
-        if ($record['clock_out'] !== '') {
-            return ['ok' => false, 'message' => 'This employee has already clocked out today.'];
-        }
-
-        $record['clock_out'] = $time;
-        $message = 'Clock out recorded for ' . $employeeName . ' at ' . $time . '.';
-        $title = 'Safe trip home';
-        $body = 'Have a safe trip home. Goodbye, and it was nice having you at work today.';
     }
 
-    $record['status'] = $record['clock_in'] !== '' && $record['clock_out'] !== '' ? 'Complete' : 'Incomplete';
-    $records[$date][$employeeNumber] = merge_attendance_flags($record);
-    write_attendance($records);
+    $result = mutate_attendance(static function (array &$records) use (
+        $action,
+        $date,
+        $departmentId,
+        $departmentName,
+        $employeeName,
+        $employeeNumber,
+        $position,
+        $savedClockInPhoto,
+        $time,
+        $validLocation
+    ): array {
+        if (!isset($records[$date])) {
+            $records[$date] = [];
+        }
 
-    $lateMinutesResult = 0;
-    $lateDurationResult = '';
+        if (!isset($records[$date][$employeeNumber])) {
+            $record = [
+                'employee_number' => $employeeNumber,
+                'employee_name' => $employeeName,
+                'position' => $position,
+                'department_id' => $departmentId,
+                'department_name' => $departmentName,
+                'date' => $date,
+                'clock_in' => '',
+                'clock_out' => '',
+                'clock_in_photo' => '',
+                'status' => 'Incomplete',
+            ];
 
-    if ($action === 'clock_in') {
-        $lateMinutesResult = (int) (($records[$date][$employeeNumber]['flags']['late_minutes'] ?? 0));
-        $lateDurationResult = $lateMinutesResult > 0 ? format_minutes_duration($lateMinutesResult) : '';
+            $records[$date][$employeeNumber] = merge_attendance_flags($record);
+        }
+
+        $record = $records[$date][$employeeNumber];
+        $record['employee_name'] = $employeeName;
+        $record['position'] = $position;
+        $record['department_id'] = $departmentId;
+        $record['department_name'] = $departmentName;
+
+        if ($action === 'clock_in') {
+            if ($record['clock_in'] !== '') {
+                return ['ok' => false, 'message' => 'This employee has already clocked in today.'];
+            }
+
+            $record['clock_in_photo'] = $savedClockInPhoto;
+
+            if (is_array($validLocation)) {
+                $record['clock_in_latitude'] = $validLocation['latitude'] ?? null;
+                $record['clock_in_longitude'] = $validLocation['longitude'] ?? null;
+                $record['clock_in_accuracy_m'] = $validLocation['accuracy_meters'] ?? null;
+            }
+
+            $record['clock_in'] = $time;
+            $clockInFlags = attendance_flags_for_times($date, $time, '');
+            $lateMinutes = (int) ($clockInFlags['late_minutes'] ?? 0);
+            $message = 'Clock in recorded for ' . $employeeName . ' at ' . $time . '.';
+            $title = 'Welcome to work';
+            $body = 'Welcome to work this morning. Your clock in has been recorded successfully.';
+
+            if ($lateMinutes > 0) {
+                $lateDuration = format_minutes_duration($lateMinutes);
+                $title = 'Clock in recorded';
+                $body = 'Clock in recorded. You are late by ' . $lateDuration . '.';
+            }
+        } else {
+            if ($record['clock_in'] === '') {
+                return ['ok' => false, 'message' => 'You must clock in first before you can clock out.'];
+            }
+
+            if ($record['clock_out'] !== '') {
+                return ['ok' => false, 'message' => 'This employee has already clocked out today.'];
+            }
+
+            $record['clock_out'] = $time;
+            $message = 'Clock out recorded for ' . $employeeName . ' at ' . $time . '.';
+            $title = 'Safe trip home';
+            $body = 'Have a safe trip home. Goodbye, and it was nice having you at work today.';
+        }
+
+        $record['status'] = $record['clock_in'] !== '' && $record['clock_out'] !== '' ? 'Complete' : 'Incomplete';
+        $records[$date][$employeeNumber] = merge_attendance_flags($record);
+
+        $lateMinutesResult = 0;
+        $lateDurationResult = '';
+
+        if ($action === 'clock_in') {
+            $lateMinutesResult = (int) (($records[$date][$employeeNumber]['flags']['late_minutes'] ?? 0));
+            $lateDurationResult = $lateMinutesResult > 0 ? format_minutes_duration($lateMinutesResult) : '';
+        }
+
+        return [
+            'ok' => true,
+            'message' => $message,
+            'title' => $title,
+            'body' => $body,
+            'employee_number' => $employeeNumber,
+            'employee_name' => $employeeName,
+            'position' => $position,
+            'department_id' => $departmentId,
+            'department_name' => $departmentName,
+            'time' => $time,
+            'action' => $action,
+            'is_late' => $action === 'clock_in' && $lateMinutesResult > 0,
+            'late_minutes' => $lateMinutesResult,
+            'late_duration' => $lateDurationResult,
+        ];
+    });
+
+    if (!$result['ok'] && $savedClockInPhoto !== '') {
+        delete_clock_in_photo_file($savedClockInPhoto);
     }
 
-    return [
-        'ok' => true,
-        'message' => $message,
-        'title' => $title,
-        'body' => $body,
-        'employee_number' => $employeeNumber,
-        'employee_name' => $employeeName,
-        'position' => $position,
-        'department_id' => $departmentId,
-        'department_name' => $departmentName,
-        'time' => $time,
-        'action' => $action,
-        'is_late' => $action === 'clock_in' && $lateMinutesResult > 0,
-        'late_minutes' => $lateMinutesResult,
-        'late_duration' => $lateDurationResult,
-    ];
+    return $result;
 }
 
 function employee_attendance_action(string $employeeNumber, string $action, string $photoData = '', ?array $clockInLocation = null): array
