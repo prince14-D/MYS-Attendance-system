@@ -6,6 +6,7 @@ require_once __DIR__ . '/storage.php';
 $result = null;
 $employeeDirectory = all_employees();
 $employeeClockStatusDirectory = [];
+$geofencePublicSettings = geofence_public_settings();
 
 foreach ($employeeDirectory as $employee) {
     $employeeNumber = (string) ($employee['employee_number'] ?? '');
@@ -69,6 +70,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                             <div class="confirmation-label"><?= h($result['action'] === 'clock_in' ? 'Clock In' : 'Clock Out') ?></div>
                             <h1><?= h($result['title']) ?></h1>
                             <p><?= h($result['body']) ?></p>
+                            <?php if (($result['action'] ?? '') === 'clock_in' && ($result['is_late'] ?? false)): ?>
+                                <div class="alert warning">
+                                    Late arrival: <?= h((string) ($result['late_duration'] ?? '')) ?> late today.
+                                </div>
+                            <?php endif; ?>
                             <dl>
                                 <div>
                                     <dt>Employee</dt>
@@ -93,6 +99,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                             <span id="statusText">Checking connection...</span>
                             <strong id="queueCount"></strong>
                         </div>
+                        <p class="muted" id="syncNotice" role="status" aria-live="polite"></p>
                         <div class="install-app-card" id="installAppCard" hidden>
                             <span>Install this attendance app on this phone.</span>
                             <button class="button secondary" type="button" id="installAppButton">Install App</button>
@@ -158,6 +165,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
         const queueCount = document.getElementById('queueCount');
+        const syncNotice = document.getElementById('syncNotice');
         const installAppCard = document.getElementById('installAppCard');
         const installAppButton = document.getElementById('installAppButton');
         const employees = <?= json_encode($employeeDirectory, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
@@ -165,10 +173,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             map[String(employee.employee_number).toUpperCase()] = employee;
             return map;
         }, {});
+        const geofenceSettings = <?= json_encode($geofencePublicSettings, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
         const employeeClockStatusByNumber = <?= json_encode($employeeClockStatusDirectory, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
         const offlineQueueKey = 'mys_attendance_offline_queue';
+        const onlineRequestTimeoutMs = 12000;
         let stream = null;
         let pendingInstallPrompt = null;
+        let syncNoticeTimer = null;
 
         async function requestBackgroundSync() {
             if (!('serviceWorker' in navigator) || !('SyncManager' in window)) {
@@ -374,6 +385,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             }
         }
 
+        function applyRecordToLocalStatus(record) {
+            const employeeNumber = String(record?.employee_number || '').toUpperCase();
+
+            if (employeeNumber === '') {
+                return;
+            }
+
+            if (!employeeClockStatusByNumber[employeeNumber]) {
+                employeeClockStatusByNumber[employeeNumber] = { clocked_in: false, clocked_out: false };
+            }
+
+            if (record.action === 'clock_in') {
+                employeeClockStatusByNumber[employeeNumber].clocked_in = true;
+            }
+
+            if (record.action === 'clock_out') {
+                employeeClockStatusByNumber[employeeNumber].clocked_out = true;
+            }
+        }
+
         function updateOfflineStatus() {
             if (!offlineStatus) {
                 return;
@@ -386,6 +417,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             statusDot.setAttribute('aria-label', online ? 'Online' : 'Offline');
             statusText.textContent = online ? 'Online mode' : 'Offline mode';
             queueCount.textContent = queue.length > 0 ? `${queue.length} waiting to sync` : '';
+        }
+
+        function showSyncNotice(message) {
+            if (!syncNotice) {
+                return;
+            }
+
+            syncNotice.textContent = message;
+
+            if (syncNoticeTimer) {
+                clearTimeout(syncNoticeTimer);
+                syncNoticeTimer = null;
+            }
+
+            if (message !== '') {
+                syncNoticeTimer = setTimeout(() => {
+                    syncNotice.textContent = '';
+                    syncNoticeTimer = null;
+                }, 8000);
+            }
         }
 
         function showLocalConfirmation(record, employee) {
@@ -420,6 +471,37 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             `;
         }
 
+        function showServerConfirmation(result) {
+            const actionLabel = result.action === 'clock_in' ? 'Clock In' : 'Clock Out';
+            const lateNotice = result.action === 'clock_in' && Boolean(result.is_late)
+                ? `<div class="alert warning">Late arrival: ${escapeHtml(result.late_duration || '')} late today.</div>`
+                : '';
+
+            document.querySelector('.form-area').innerHTML = `
+                <div class="confirmation-screen">
+                    <div class="confirmation-label">${actionLabel}</div>
+                    <h1>${escapeHtml(result.title || '')}</h1>
+                    <p>${escapeHtml(result.body || '')}</p>
+                    ${lateNotice}
+                    <dl>
+                        <div>
+                            <dt>Employee</dt>
+                            <dd>${escapeHtml(result.employee_name || '')}</dd>
+                        </div>
+                        <div>
+                            <dt>Number</dt>
+                            <dd>${escapeHtml(result.employee_number || '')}</dd>
+                        </div>
+                        <div>
+                            <dt>Time</dt>
+                            <dd>${escapeHtml(result.time || '')}</dd>
+                        </div>
+                    </dl>
+                    <a class="button primary full-button" href="index.php">Done</a>
+                </div>
+            `;
+        }
+
         function escapeHtml(value) {
             return String(value)
                 .replaceAll('&', '&amp;')
@@ -429,7 +511,155 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 .replaceAll("'", '&#039;');
         }
 
-        function saveOfflineRecord(action) {
+        function actionLabel(action) {
+            return action === 'clock_in' ? 'clock in' : 'clock out';
+        }
+
+        function geofenceEnabled() {
+            return Boolean(geofenceSettings?.enabled)
+                && Number.isFinite(Number(geofenceSettings?.latitude))
+                && Number.isFinite(Number(geofenceSettings?.longitude));
+        }
+
+        function geoDistanceMeters(fromLat, fromLon, toLat, toLon) {
+            const earthRadius = 6371000;
+            const toRad = (degrees) => degrees * (Math.PI / 180);
+            const deltaLat = toRad(toLat - fromLat);
+            const deltaLon = toRad(toLon - fromLon);
+            const fromLatRad = toRad(fromLat);
+            const toLatRad = toRad(toLat);
+            const a = (Math.sin(deltaLat / 2) ** 2)
+                + Math.cos(fromLatRad) * Math.cos(toLatRad) * (Math.sin(deltaLon / 2) ** 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+            return earthRadius * c;
+        }
+
+        function validateClockInGeofenceClient(clockInLocation) {
+            if (!geofenceEnabled()) {
+                return { ok: true };
+            }
+
+            const sourceLatitude = Number(clockInLocation?.latitude);
+            const sourceLongitude = Number(clockInLocation?.longitude);
+            const targetLatitude = Number(geofenceSettings.latitude);
+            const targetLongitude = Number(geofenceSettings.longitude);
+            const radiusMeters = Math.max(20, Number(geofenceSettings.radius_meters || 150));
+
+            if (!Number.isFinite(sourceLatitude) || !Number.isFinite(sourceLongitude)) {
+                return { ok: false, message: 'Location is required before clocking in.' };
+            }
+
+            const distanceMeters = geoDistanceMeters(sourceLatitude, sourceLongitude, targetLatitude, targetLongitude);
+
+            if (distanceMeters > radiusMeters) {
+                return {
+                    ok: false,
+                    message: `You are outside the allowed clock-in area (${Math.round(distanceMeters)}m away).`
+                };
+            }
+
+            return { ok: true };
+        }
+
+        function requestCurrentLocation() {
+            return new Promise((resolve, reject) => {
+                if (!('geolocation' in navigator)) {
+                    reject(new Error('Geolocation is not supported on this device.'));
+                    return;
+                }
+
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        resolve({
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                            accuracy_meters: position.coords.accuracy,
+                            captured_at: new Date().toISOString()
+                        });
+                    },
+                    () => {
+                        reject(new Error('Unable to get your current location. Please allow location access.'));
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 12000,
+                        maximumAge: 0
+                    }
+                );
+            });
+        }
+
+        function setSubmittingState(isSubmitting) {
+            if (clockInButton) {
+                clockInButton.disabled = isSubmitting;
+            }
+
+            if (clockOutButton) {
+                clockOutButton.disabled = isSubmitting;
+            }
+
+            if (employeeInput) {
+                employeeInput.disabled = isSubmitting;
+            }
+        }
+
+        async function submitOnlineRecord(action, employeeNumber, clockInLocation = null) {
+            const abortController = new AbortController();
+            const timeoutId = setTimeout(() => abortController.abort(), onlineRequestTimeoutMs);
+
+            try {
+                const response = await fetch('attendance_action.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        employee_number: employeeNumber,
+                        action,
+                        clock_in_photo: action === 'clock_in' ? photoInput.value : '',
+                        clock_in_location: action === 'clock_in' ? clockInLocation : null
+                    }),
+                    signal: abortController.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error('Attendance request failed');
+                }
+
+                const payload = await response.json();
+
+                if (!payload.ok) {
+                    cameraMessage.textContent = payload.message || 'Unable to record attendance right now.';
+                    syncActionState();
+                    return;
+                }
+
+                applyRecordToLocalStatus({
+                    employee_number: payload.employee_number,
+                    action: payload.action
+                });
+                showServerConfirmation(payload);
+            } catch (error) {
+                if (!navigator.onLine || error.name === 'AbortError') {
+                    const saved = saveOfflineRecord(action, clockInLocation);
+
+                    if (saved) {
+                        showSyncNotice('Server is slow. Your action was saved offline and will sync automatically.');
+                    }
+
+                    return;
+                }
+
+                cameraMessage.textContent = 'Could not reach the server. Please try again.';
+                syncActionState();
+            } finally {
+                clearTimeout(timeoutId);
+                setSubmittingState(false);
+            }
+        }
+
+        function saveOfflineRecord(action, clockInLocation = null) {
             const employeeNumber = employeeInput.value.trim().toUpperCase();
             const employee = employeesByNumber[employeeNumber];
 
@@ -452,29 +682,29 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 return false;
             }
 
+            if (action === 'clock_in') {
+                const geofenceCheck = validateClockInGeofenceClient(clockInLocation);
+
+                if (!geofenceCheck.ok) {
+                    cameraMessage.textContent = geofenceCheck.message;
+                    return false;
+                }
+            }
+
             const record = {
                 id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
                 employee_number: employeeNumber,
                 employee_name: employee.employee_name,
                 action,
                 clock_in_photo: action === 'clock_in' ? photoInput.value : '',
+                clock_in_location: action === 'clock_in' ? clockInLocation : null,
                 recorded_at: new Date().toISOString()
             };
             const queue = readQueue();
             queue.push(record);
             writeQueue(queue);
 
-            if (!employeeClockStatusByNumber[employeeNumber]) {
-                employeeClockStatusByNumber[employeeNumber] = { clocked_in: false, clocked_out: false };
-            }
-
-            if (action === 'clock_in') {
-                employeeClockStatusByNumber[employeeNumber].clocked_in = true;
-            }
-
-            if (action === 'clock_out') {
-                employeeClockStatusByNumber[employeeNumber].clocked_out = true;
-            }
+            applyRecordToLocalStatus(record);
 
             syncActionState();
             showLocalConfirmation(record, employee);
@@ -487,7 +717,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
             return normalized.includes('already clocked in')
                 || normalized.includes('already clocked out')
-                || normalized.includes('must clock in first')
                 || normalized.includes('is not registered')
                 || normalized.includes('invalid attendance action')
                 || normalized.includes('invalid time');
@@ -520,21 +749,47 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 const payload = await response.json();
                 const completed = new Set();
                 const permanentFailures = new Set();
+                const queueById = new Map(queue.map((record) => [record.id, record]));
+                const syncedRecords = [];
 
                 (payload.results || []).forEach((result) => {
+                    const record = queueById.get(result.id);
+
                     if (result.ok) {
                         completed.add(result.id);
+
+                        if (record) {
+                            applyRecordToLocalStatus(record);
+                            syncedRecords.push(record);
+                        }
+
                         return;
                     }
 
                     if (isPermanentSyncFailure(result.message || '')) {
                         permanentFailures.add(result.id);
+
+                        // Align local state when the server confirms this action already exists.
+                        if (record) {
+                            const normalized = String(result.message || '').toLowerCase();
+
+                            if (normalized.includes('already clocked in') || normalized.includes('already clocked out')) {
+                                applyRecordToLocalStatus(record);
+                            }
+                        }
                     }
                 });
 
                 const remaining = queue.filter((record) => !completed.has(record.id) && !permanentFailures.has(record.id));
                 writeQueue(remaining);
                 syncActionState();
+
+                if (syncedRecords.length === 1) {
+                    const record = syncedRecords[0];
+                    showSyncNotice(`Synced offline ${actionLabel(record.action)} for ${record.employee_number}.`);
+                } else if (syncedRecords.length > 1) {
+                    showSyncNotice(`Synced ${syncedRecords.length} offline attendance records.`);
+                }
             } catch (error) {
                 updateOfflineStatus();
             }
@@ -571,15 +826,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
 
         employeeInput?.addEventListener('input', () => {
-            if (employeeInput.value.trim().length >= 2) {
-                openCamera();
-            }
-
             syncActionState();
         });
 
         employeeInput?.addEventListener('blur', () => {
-            openCamera();
             syncActionState();
         });
 
@@ -609,18 +859,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         retakePhoto?.addEventListener('click', showCameraStream);
 
-        attendanceForm?.addEventListener('submit', (event) => {
+        attendanceForm?.addEventListener('submit', async (event) => {
+            event.preventDefault();
             const action = event.submitter?.value;
             const employeeNumber = employeeInput?.value.trim().toUpperCase() || '';
 
+            if (!action || !['clock_in', 'clock_out'].includes(action)) {
+                cameraMessage.textContent = 'Invalid attendance action.';
+                return;
+            }
+
             if (!employeesByNumber[employeeNumber]) {
-                event.preventDefault();
                 cameraMessage.textContent = 'This employee number is not registered on this device.';
                 return;
             }
 
             if (!isActionAllowed(employeeNumber, action)) {
-                event.preventDefault();
                 cameraMessage.textContent = action === 'clock_in'
                     ? 'Clock in has already been recorded for today.'
                     : 'You can clock out only once after a valid clock in.';
@@ -629,17 +883,40 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             }
 
             if (action === 'clock_in' && photoInput.value === '') {
-                event.preventDefault();
                 cameraCard.hidden = false;
                 cameraMessage.textContent = 'Please take your photo before clocking in.';
                 openCamera();
                 return;
             }
 
-            if (!navigator.onLine) {
-                event.preventDefault();
-                saveOfflineRecord(action);
+            let clockInLocation = null;
+
+            if (action === 'clock_in' && geofenceEnabled()) {
+                cameraMessage.textContent = 'Getting your current location...';
+
+                try {
+                    clockInLocation = await requestCurrentLocation();
+                } catch (error) {
+                    cameraMessage.textContent = error.message || 'Unable to get your current location.';
+                    return;
+                }
+
+                const geofenceCheck = validateClockInGeofenceClient(clockInLocation);
+
+                if (!geofenceCheck.ok) {
+                    cameraMessage.textContent = geofenceCheck.message;
+                    return;
+                }
             }
+
+            if (!navigator.onLine) {
+                saveOfflineRecord(action, clockInLocation);
+                return;
+            }
+
+            setSubmittingState(true);
+            cameraMessage.textContent = 'Submitting attendance...';
+            await submitOnlineRecord(action, employeeNumber, clockInLocation);
         });
 
         window.addEventListener('online', () => {

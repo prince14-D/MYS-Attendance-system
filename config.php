@@ -12,6 +12,7 @@ const PHOTOS_DIR = STORAGE_DIR . '/photos';
 const ATTENDANCE_FILE = STORAGE_DIR . '/attendance.json';
 const EMPLOYEES_FILE = STORAGE_DIR . '/employees.json';
 const DEPARTMENTS_FILE = STORAGE_DIR . '/departments.json';
+const GEOFENCE_FILE = STORAGE_DIR . '/geofence.json';
 const SHIFT_START_TIME = '09:00:00';
 const SHIFT_END_TIME = '17:00:00';
 const LATE_GRACE_MINUTES = 10;
@@ -39,6 +40,16 @@ if (!file_exists(EMPLOYEES_FILE)) {
 
 if (!file_exists(DEPARTMENTS_FILE)) {
     file_put_contents(DEPARTMENTS_FILE, json_encode([], JSON_PRETTY_PRINT));
+}
+
+if (!file_exists(GEOFENCE_FILE)) {
+    file_put_contents(GEOFENCE_FILE, json_encode([
+        'enabled' => false,
+        'latitude' => null,
+        'longitude' => null,
+        'radius_meters' => 150,
+        'updated_at' => date('Y-m-d H:i:s'),
+    ], JSON_PRETTY_PRINT));
 }
 
 function h(string $value): string

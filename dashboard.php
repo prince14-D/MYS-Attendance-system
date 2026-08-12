@@ -65,6 +65,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $_POST['department_id'] ?? '',
             $_POST['position'] ?? ''
         );
+    } elseif ($adminAction === 'update_geofence') {
+        $registrationResult = update_geofence_settings(
+            isset($_POST['geofence_enabled']) ? '1' : '0',
+            $_POST['geofence_latitude'] ?? '',
+            $_POST['geofence_longitude'] ?? '',
+            $_POST['geofence_radius_meters'] ?? ''
+        );
     } elseif ($adminAction === 'restore_backup') {
         $registrationResult = restore_from_backup_upload($_FILES['backup_file'] ?? []);
     }
@@ -87,6 +94,7 @@ $records = attendance_for_date($selectedDate, $selectedDepartment);
 $dates = all_attendance_dates();
 $employees = all_employees();
 $departments = all_departments();
+$geofenceSettings = read_geofence_settings();
 $totalWorkedMinutes = 0;
 $completeWorkedMinutes = 0;
 
@@ -408,6 +416,69 @@ if (!in_array($selectedDate, $dates, true)) {
                     </div>
                     <p class="muted">Create departments, register employees, and import lists.</p>
                 </div>
+
+                <section class="admin-box backup-box">
+                    <h2>Clock-in Geofence</h2>
+                    <p class="muted">Require staff to be inside a location radius before clock-in.</p>
+
+                    <form method="post" class="stacked-form">
+                        <input type="hidden" name="admin_action" value="update_geofence">
+
+                        <label class="checkbox-field" for="geofence_enabled">
+                            <input
+                                id="geofence_enabled"
+                                name="geofence_enabled"
+                                type="checkbox"
+                                value="1"
+                                <?= ($geofenceSettings['enabled'] ?? false) ? 'checked' : '' ?>
+                            >
+                            Enable geofence validation on clock-in
+                        </label>
+
+                        <label for="geofence_latitude">Latitude</label>
+                        <input
+                            id="geofence_latitude"
+                            name="geofence_latitude"
+                            type="number"
+                            step="0.000001"
+                            min="-90"
+                            max="90"
+                            placeholder="Example: 6.300000"
+                            value="<?= h((string) (($geofenceSettings['latitude'] ?? '') === null ? '' : $geofenceSettings['latitude'])) ?>"
+                        >
+
+                        <label for="geofence_longitude">Longitude</label>
+                        <input
+                            id="geofence_longitude"
+                            name="geofence_longitude"
+                            type="number"
+                            step="0.000001"
+                            min="-180"
+                            max="180"
+                            placeholder="Example: -10.800000"
+                            value="<?= h((string) (($geofenceSettings['longitude'] ?? '') === null ? '' : $geofenceSettings['longitude'])) ?>"
+                        >
+
+                        <div class="geofence-tools">
+                            <button class="link-button" type="button" id="useCurrentGeofenceLocation">Use My Current Location</button>
+                            <span class="geofence-status" id="geofenceAutoStatus" role="status" aria-live="polite"></span>
+                        </div>
+
+                        <label for="geofence_radius_meters">Allowed Radius (meters)</label>
+                        <input
+                            id="geofence_radius_meters"
+                            name="geofence_radius_meters"
+                            type="number"
+                            min="20"
+                            max="5000"
+                            step="1"
+                            value="<?= h((string) ($geofenceSettings['radius_meters'] ?? 150)) ?>"
+                            required
+                        >
+
+                        <button class="button secondary full-button" type="submit">Save Geofence</button>
+                    </form>
+                </section>
 
                 <section class="admin-box backup-box">
                     <h2>Backup and Restore</h2>
@@ -890,6 +961,10 @@ if (!in_array($selectedDate, $dates, true)) {
         const recordsFilterSummary = document.getElementById('recordsFilterSummary');
         const recordsFilterEmpty = document.getElementById('recordsFilterEmpty');
         const recordRows = Array.from(document.querySelectorAll('[data-record-row]'));
+        const geofenceLatitudeInput = document.getElementById('geofence_latitude');
+        const geofenceLongitudeInput = document.getElementById('geofence_longitude');
+        const useCurrentGeofenceLocationButton = document.getElementById('useCurrentGeofenceLocation');
+        const geofenceAutoStatus = document.getElementById('geofenceAutoStatus');
 
         function applyRecordsFilter() {
             if (recordRows.length === 0) {
@@ -926,6 +1001,61 @@ if (!in_array($selectedDate, $dates, true)) {
         recordSearch?.addEventListener('input', applyRecordsFilter);
         recordStatusFilter?.addEventListener('change', applyRecordsFilter);
         applyRecordsFilter();
+
+        useCurrentGeofenceLocationButton?.addEventListener('click', () => {
+            if (!('geolocation' in navigator)) {
+                if (geofenceAutoStatus) {
+                    geofenceAutoStatus.textContent = 'Geolocation is not supported on this device.';
+                }
+                return;
+            }
+
+            if (window.isSecureContext === false) {
+                if (geofenceAutoStatus) {
+                    geofenceAutoStatus.textContent = 'Location access requires HTTPS.';
+                }
+                return;
+            }
+
+            useCurrentGeofenceLocationButton.disabled = true;
+
+            if (geofenceAutoStatus) {
+                geofenceAutoStatus.textContent = 'Getting your current location...';
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const latitude = Number(position.coords.latitude).toFixed(6);
+                    const longitude = Number(position.coords.longitude).toFixed(6);
+
+                    if (geofenceLatitudeInput) {
+                        geofenceLatitudeInput.value = latitude;
+                    }
+
+                    if (geofenceLongitudeInput) {
+                        geofenceLongitudeInput.value = longitude;
+                    }
+
+                    if (geofenceAutoStatus) {
+                        geofenceAutoStatus.textContent = `Location updated (accuracy ${Math.round(position.coords.accuracy)}m).`;
+                    }
+
+                    useCurrentGeofenceLocationButton.disabled = false;
+                },
+                () => {
+                    if (geofenceAutoStatus) {
+                        geofenceAutoStatus.textContent = 'Unable to read location. Allow permission and try again.';
+                    }
+
+                    useCurrentGeofenceLocationButton.disabled = false;
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 12000,
+                    maximumAge: 0
+                }
+            );
+        });
 
         document.querySelectorAll('[data-print-mode]').forEach((button) => {
             button.addEventListener('click', () => {

@@ -78,6 +78,204 @@ function write_departments(array $departments): void
     fclose($handle);
 }
 
+function default_geofence_settings(): array
+{
+    return [
+        'enabled' => false,
+        'latitude' => null,
+        'longitude' => null,
+        'radius_meters' => 150,
+        'updated_at' => date('Y-m-d H:i:s'),
+    ];
+}
+
+function read_geofence_settings(): array
+{
+    $contents = file_get_contents(GEOFENCE_FILE);
+    $settings = json_decode($contents ?: '[]', true);
+    $defaults = default_geofence_settings();
+
+    if (!is_array($settings)) {
+        return $defaults;
+    }
+
+    $enabled = (bool) ($settings['enabled'] ?? false);
+    $latitude = isset($settings['latitude']) && is_numeric($settings['latitude']) ? (float) $settings['latitude'] : null;
+    $longitude = isset($settings['longitude']) && is_numeric($settings['longitude']) ? (float) $settings['longitude'] : null;
+    $radiusMeters = isset($settings['radius_meters']) && is_numeric($settings['radius_meters'])
+        ? (int) round((float) $settings['radius_meters'])
+        : (int) $defaults['radius_meters'];
+
+    if ($latitude !== null && ($latitude < -90 || $latitude > 90)) {
+        $latitude = null;
+    }
+
+    if ($longitude !== null && ($longitude < -180 || $longitude > 180)) {
+        $longitude = null;
+    }
+
+    $radiusMeters = max(20, min(5000, $radiusMeters));
+
+    return [
+        'enabled' => $enabled,
+        'latitude' => $latitude,
+        'longitude' => $longitude,
+        'radius_meters' => $radiusMeters,
+        'updated_at' => (string) ($settings['updated_at'] ?? $defaults['updated_at']),
+    ];
+}
+
+function write_geofence_settings(array $settings): void
+{
+    $handle = fopen(GEOFENCE_FILE, 'c+');
+
+    if (!$handle) {
+        throw new RuntimeException('Unable to open geofence storage.');
+    }
+
+    flock($handle, LOCK_EX);
+    ftruncate($handle, 0);
+    rewind($handle);
+    fwrite($handle, json_encode($settings, JSON_PRETTY_PRINT));
+    fflush($handle);
+    flock($handle, LOCK_UN);
+    fclose($handle);
+}
+
+function update_geofence_settings(string $enabled, string $latitude, string $longitude, string $radiusMeters): array
+{
+    $isEnabled = $enabled === '1';
+    $latitude = trim($latitude);
+    $longitude = trim($longitude);
+    $radiusMeters = trim($radiusMeters);
+
+    if ($isEnabled) {
+        if ($latitude === '' || $longitude === '') {
+            return ['ok' => false, 'message' => 'Set both latitude and longitude when geofence is enabled.'];
+        }
+
+        if (!is_numeric($latitude) || !is_numeric($longitude)) {
+            return ['ok' => false, 'message' => 'Latitude and longitude must be numeric values.'];
+        }
+    }
+
+    $parsedLatitude = $latitude === '' ? null : (float) $latitude;
+    $parsedLongitude = $longitude === '' ? null : (float) $longitude;
+
+    if ($parsedLatitude !== null && ($parsedLatitude < -90 || $parsedLatitude > 90)) {
+        return ['ok' => false, 'message' => 'Latitude must be between -90 and 90.'];
+    }
+
+    if ($parsedLongitude !== null && ($parsedLongitude < -180 || $parsedLongitude > 180)) {
+        return ['ok' => false, 'message' => 'Longitude must be between -180 and 180.'];
+    }
+
+    $parsedRadius = is_numeric($radiusMeters) ? (int) round((float) $radiusMeters) : 150;
+
+    if ($parsedRadius < 20 || $parsedRadius > 5000) {
+        return ['ok' => false, 'message' => 'Radius must be between 20 and 5000 meters.'];
+    }
+
+    $settings = [
+        'enabled' => $isEnabled,
+        'latitude' => $parsedLatitude,
+        'longitude' => $parsedLongitude,
+        'radius_meters' => $parsedRadius,
+        'updated_at' => date('Y-m-d H:i:s'),
+    ];
+
+    write_geofence_settings($settings);
+
+    return ['ok' => true, 'message' => 'Geofence settings updated successfully.'];
+}
+
+function geofence_public_settings(): array
+{
+    $settings = read_geofence_settings();
+
+    return [
+        'enabled' => (bool) ($settings['enabled'] ?? false),
+        'latitude' => $settings['latitude'],
+        'longitude' => $settings['longitude'],
+        'radius_meters' => (int) ($settings['radius_meters'] ?? 150),
+    ];
+}
+
+function geo_distance_meters(float $fromLat, float $fromLon, float $toLat, float $toLon): float
+{
+    $earthRadius = 6371000.0;
+    $fromLatRad = deg2rad($fromLat);
+    $toLatRad = deg2rad($toLat);
+    $deltaLat = deg2rad($toLat - $fromLat);
+    $deltaLon = deg2rad($toLon - $fromLon);
+
+    $a = sin($deltaLat / 2) ** 2
+        + cos($fromLatRad) * cos($toLatRad) * sin($deltaLon / 2) ** 2;
+    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+    return $earthRadius * $c;
+}
+
+function validate_clock_in_geofence(?array $clockInLocation): array
+{
+    $settings = read_geofence_settings();
+
+    if (!(bool) ($settings['enabled'] ?? false)) {
+        return ['ok' => true, 'location' => null];
+    }
+
+    $targetLatitude = isset($settings['latitude']) && is_numeric($settings['latitude']) ? (float) $settings['latitude'] : null;
+    $targetLongitude = isset($settings['longitude']) && is_numeric($settings['longitude']) ? (float) $settings['longitude'] : null;
+    $radiusMeters = (int) ($settings['radius_meters'] ?? 150);
+
+    if ($targetLatitude === null || $targetLongitude === null) {
+        return ['ok' => false, 'message' => 'Clock-in location is not configured. Contact admin.'];
+    }
+
+    if (!is_array($clockInLocation)) {
+        return ['ok' => false, 'message' => 'Location is required before clocking in. Please allow GPS and try again.'];
+    }
+
+    $sourceLatitude = isset($clockInLocation['latitude']) && is_numeric($clockInLocation['latitude'])
+        ? (float) $clockInLocation['latitude']
+        : null;
+    $sourceLongitude = isset($clockInLocation['longitude']) && is_numeric($clockInLocation['longitude'])
+        ? (float) $clockInLocation['longitude']
+        : null;
+    $accuracyMeters = isset($clockInLocation['accuracy_meters']) && is_numeric($clockInLocation['accuracy_meters'])
+        ? max(0.0, (float) $clockInLocation['accuracy_meters'])
+        : null;
+
+    if ($sourceLatitude === null || $sourceLongitude === null) {
+        return ['ok' => false, 'message' => 'Location is required before clocking in. Please allow GPS and try again.'];
+    }
+
+    if ($sourceLatitude < -90 || $sourceLatitude > 90 || $sourceLongitude < -180 || $sourceLongitude > 180) {
+        return ['ok' => false, 'message' => 'Clock-in location is invalid. Please refresh your location and try again.'];
+    }
+
+    $distanceMeters = geo_distance_meters($sourceLatitude, $sourceLongitude, $targetLatitude, $targetLongitude);
+
+    if ($distanceMeters > $radiusMeters) {
+        return [
+            'ok' => false,
+            'message' => 'You are outside the allowed clock-in area. Move closer and try again.',
+            'distance_meters' => (int) round($distanceMeters),
+            'radius_meters' => $radiusMeters,
+        ];
+    }
+
+    return [
+        'ok' => true,
+        'location' => [
+            'latitude' => $sourceLatitude,
+            'longitude' => $sourceLongitude,
+            'accuracy_meters' => $accuracyMeters,
+            'distance_meters' => $distanceMeters,
+        ],
+    ];
+}
+
 function normalize_employee_number(string $employeeNumber): string
 {
     return strtoupper(trim($employeeNumber));
@@ -762,6 +960,7 @@ function backup_snapshot_payload(): array
         'attendance' => read_attendance(),
         'employees' => read_employees(),
         'departments' => read_departments(),
+        'geofence' => read_geofence_settings(),
     ];
 }
 
@@ -813,9 +1012,14 @@ function restore_from_backup_upload(array $file): array
     $attendance = $payload['attendance'] ?? null;
     $employees = $payload['employees'] ?? null;
     $departments = $payload['departments'] ?? null;
+    $geofence = $payload['geofence'] ?? default_geofence_settings();
 
     if (!is_array($attendance) || !is_array($employees) || !is_array($departments)) {
         return ['ok' => false, 'message' => 'Backup file is missing required data sections.'];
+    }
+
+    if (!is_array($geofence)) {
+        $geofence = default_geofence_settings();
     }
 
     foreach ($attendance as $date => $dayRecords) {
@@ -878,6 +1082,15 @@ function restore_from_backup_upload(array $file): array
     write_attendance($attendance);
     write_employees($employees);
     write_departments($departments);
+    write_geofence_settings([
+        'enabled' => (bool) ($geofence['enabled'] ?? false),
+        'latitude' => isset($geofence['latitude']) && is_numeric($geofence['latitude']) ? (float) $geofence['latitude'] : null,
+        'longitude' => isset($geofence['longitude']) && is_numeric($geofence['longitude']) ? (float) $geofence['longitude'] : null,
+        'radius_meters' => isset($geofence['radius_meters']) && is_numeric($geofence['radius_meters'])
+            ? max(20, min(5000, (int) round((float) $geofence['radius_meters'])))
+            : 150,
+        'updated_at' => date('Y-m-d H:i:s'),
+    ]);
 
     return ['ok' => true, 'message' => 'Backup restored successfully.'];
 }
@@ -1180,7 +1393,24 @@ function save_clock_in_photo(string $photoData, string $employeeNumber, string $
     return 'storage/photos/' . $filename;
 }
 
-function record_attendance_action(string $employeeNumber, string $action, string $photoData = '', ?DateTimeInterface $recordedAt = null): array
+function format_minutes_duration(int $minutes): string
+{
+    $minutes = max(0, $minutes);
+    $hours = intdiv($minutes, 60);
+    $remainingMinutes = $minutes % 60;
+
+    if ($hours === 0) {
+        return $minutes . ' minute' . ($minutes === 1 ? '' : 's');
+    }
+
+    if ($remainingMinutes === 0) {
+        return $hours . ' hour' . ($hours === 1 ? '' : 's');
+    }
+
+    return $hours . ' hour' . ($hours === 1 ? '' : 's') . ' ' . $remainingMinutes . ' minute' . ($remainingMinutes === 1 ? '' : 's');
+}
+
+function record_attendance_action(string $employeeNumber, string $action, string $photoData = '', ?DateTimeInterface $recordedAt = null, ?array $clockInLocation = null): array
 {
     $employeeNumber = normalize_employee_number($employeeNumber);
 
@@ -1239,16 +1469,38 @@ function record_attendance_action(string $employeeNumber, string $action, string
             return ['ok' => false, 'message' => 'This employee has already clocked in today.'];
         }
 
+        $geofenceValidation = validate_clock_in_geofence($clockInLocation);
+
+        if (!$geofenceValidation['ok']) {
+            return ['ok' => false, 'message' => (string) ($geofenceValidation['message'] ?? 'Unable to validate clock-in location.')];
+        }
+
         try {
             $record['clock_in_photo'] = save_clock_in_photo($photoData, $employeeNumber, $date, $time);
         } catch (InvalidArgumentException | RuntimeException $exception) {
             return ['ok' => false, 'message' => $exception->getMessage()];
         }
 
+        $validLocation = $geofenceValidation['location'] ?? null;
+
+        if (is_array($validLocation)) {
+            $record['clock_in_latitude'] = $validLocation['latitude'] ?? null;
+            $record['clock_in_longitude'] = $validLocation['longitude'] ?? null;
+            $record['clock_in_accuracy_m'] = $validLocation['accuracy_meters'] ?? null;
+        }
+
         $record['clock_in'] = $time;
+        $clockInFlags = attendance_flags_for_times($date, $time, '');
+        $lateMinutes = (int) ($clockInFlags['late_minutes'] ?? 0);
         $message = 'Clock in recorded for ' . $employeeName . ' at ' . $time . '.';
         $title = 'Welcome to work';
         $body = 'Welcome to work this morning. Your clock in has been recorded successfully.';
+
+        if ($lateMinutes > 0) {
+            $lateDuration = format_minutes_duration($lateMinutes);
+            $title = 'Clock in recorded';
+            $body = 'Clock in recorded. You are late by ' . $lateDuration . '.';
+        }
     } else {
         if ($record['clock_in'] === '') {
             return ['ok' => false, 'message' => 'You must clock in first before you can clock out.'];
@@ -1268,6 +1520,14 @@ function record_attendance_action(string $employeeNumber, string $action, string
     $records[$date][$employeeNumber] = merge_attendance_flags($record);
     write_attendance($records);
 
+    $lateMinutesResult = 0;
+    $lateDurationResult = '';
+
+    if ($action === 'clock_in') {
+        $lateMinutesResult = (int) (($records[$date][$employeeNumber]['flags']['late_minutes'] ?? 0));
+        $lateDurationResult = $lateMinutesResult > 0 ? format_minutes_duration($lateMinutesResult) : '';
+    }
+
     return [
         'ok' => true,
         'message' => $message,
@@ -1280,19 +1540,23 @@ function record_attendance_action(string $employeeNumber, string $action, string
         'department_name' => $departmentName,
         'time' => $time,
         'action' => $action,
+        'is_late' => $action === 'clock_in' && $lateMinutesResult > 0,
+        'late_minutes' => $lateMinutesResult,
+        'late_duration' => $lateDurationResult,
     ];
 }
 
-function employee_attendance_action(string $employeeNumber, string $action, string $photoData = ''): array
+function employee_attendance_action(string $employeeNumber, string $action, string $photoData = '', ?array $clockInLocation = null): array
 {
-    return record_attendance_action($employeeNumber, $action, $photoData);
+    return record_attendance_action($employeeNumber, $action, $photoData, null, $clockInLocation);
 }
 
 function sync_offline_attendance(array $items): array
 {
+    $prepared = [];
     $results = [];
 
-    foreach ($items as $item) {
+    foreach ($items as $index => $item) {
         $id = is_array($item) ? (string) ($item['id'] ?? '') : '';
         $recordedAtValue = is_array($item) ? (string) ($item['recorded_at'] ?? '') : '';
         $recordedAt = null;
@@ -1314,11 +1578,54 @@ function sync_offline_attendance(array $items): array
             continue;
         }
 
+        $prepared[] = [
+            'id' => $id,
+            'item' => $item,
+            'recorded_at' => $recordedAt,
+            'index' => $index,
+        ];
+    }
+
+    usort($prepared, static function (array $a, array $b): int {
+        /** @var DateTimeInterface $aTime */
+        $aTime = $a['recorded_at'];
+        /** @var DateTimeInterface $bTime */
+        $bTime = $b['recorded_at'];
+
+        $timeCompare = $aTime->getTimestamp() <=> $bTime->getTimestamp();
+
+        if ($timeCompare !== 0) {
+            return $timeCompare;
+        }
+
+        $aAction = (string) (($a['item']['action'] ?? ''));
+        $bAction = (string) (($b['item']['action'] ?? ''));
+
+        if ($aAction !== $bAction) {
+            if ($aAction === 'clock_in') {
+                return -1;
+            }
+
+            if ($bAction === 'clock_in') {
+                return 1;
+            }
+        }
+
+        return $a['index'] <=> $b['index'];
+    });
+
+    foreach ($prepared as $entry) {
+        $item = $entry['item'];
+        /** @var DateTimeInterface $recordedAt */
+        $recordedAt = $entry['recorded_at'];
+        $id = $entry['id'];
+
         $result = record_attendance_action(
             (string) ($item['employee_number'] ?? ''),
             (string) ($item['action'] ?? ''),
             (string) ($item['clock_in_photo'] ?? ''),
-            $recordedAt
+            $recordedAt,
+            is_array($item['clock_in_location'] ?? null) ? $item['clock_in_location'] : null
         );
 
         $results[] = [

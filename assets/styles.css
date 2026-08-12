@@ -467,6 +467,12 @@ select:focus {
     color: #8c2525;
 }
 
+.alert.warning {
+    background: #fff6e7;
+    border-color: #f2d298;
+    color: #855b10;
+}
+
 .content {
     width: min(1360px, calc(100% - 32px));
     margin: 28px auto 48px;
@@ -903,6 +909,30 @@ body.modal-open {
 
 .stacked-form label {
     margin-bottom: -4px;
+}
+
+.checkbox-field {
+    align-items: center;
+    display: flex;
+    gap: 10px;
+    margin-bottom: 0;
+}
+
+.checkbox-field input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+.geofence-tools {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.geofence-status {
+    color: var(--muted);
+    font-size: 13px;
 }
 
 .compact-toolbar {
