@@ -74,6 +74,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         );
     } elseif ($adminAction === 'restore_backup') {
         $registrationResult = restore_from_backup_upload($_FILES['backup_file'] ?? []);
+    } elseif ($adminAction === 'upload_employee_document') {
+        $registrationResult = upload_employee_document($_POST['employee_number'] ?? '', $_FILES['employee_document'] ?? [], $_POST['document_label'] ?? '');
+    } elseif ($adminAction === 'delete_employee_document') {
+        $registrationResult = delete_employee_document($_POST['document_id'] ?? '', $_POST['employee_number'] ?? '');
+    } elseif ($adminAction === 'update_employee_profile') {
+        $employeeNumber = $_POST['employee_number'] ?? '';
+        $registrationResult = update_employee_record($employeeNumber, $employeeNumber, $_POST['employee_name'] ?? '', $_POST['department_id'] ?? '', $_POST['position'] ?? '');
+    } elseif ($adminAction === 'create_system_user') {
+        require_roles(['admin']);
+        $registrationResult = create_system_user($_POST['username'] ?? '', $_POST['password'] ?? '', $_POST['role'] ?? '');
+    } elseif ($adminAction === 'update_system_user') {
+        require_roles(['admin']);
+        $registrationResult = update_system_user($_POST['username'] ?? '', $_POST['role'] ?? '', $_POST['new_password'] ?? '');
+    } elseif ($adminAction === 'delete_system_user') {
+        require_roles(['admin']);
+        $registrationResult = delete_system_user($_POST['username'] ?? '');
+    } elseif ($adminAction === 'review_excuse') {
+        require_roles(['admin', 'hr', 'supervisor']);
+        $registrationResult = review_excuse($_POST['excuse_id'] ?? '', current_username(), $_POST['decision'] ?? '');
     }
 }
 
@@ -104,6 +123,10 @@ $allowedAdminPages = [
     'backup_restore',
     'geofence',
     'monthly_report',
+    'excuse_form',
+    'tally_sheet',
+    'employee_profiles',
+    'user_management',
 ];
 
 $activePage = $_GET['page'] ?? 'home';
@@ -121,10 +144,25 @@ $adminPageLinks = [
     'backup_restore' => ['label' => 'Backup & Restore', 'href' => 'backup_restore.php'],
     'geofence' => ['label' => 'Setup Geofence', 'href' => 'geofence.php'],
     'monthly_report' => ['label' => 'Monthly Report', 'href' => 'monthly_report.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
+    'excuse_form' => ['label' => 'Employee Excuse Form', 'href' => 'excuse_form.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
+    'tally_sheet' => ['label' => 'Attendance Tally Sheet', 'href' => 'tally_sheet.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
+    'employee_profiles' => ['label' => 'Employee Profiles', 'href' => 'employee_profiles.php'],
+    'user_management' => ['label' => 'User Management', 'href' => 'user_management.php'],
 ];
+
+$pageRoles = [
+    'home' => ['admin', 'hr', 'supervisor', 'viewer'],
+    'register_employee' => ['admin'], 'employees' => ['admin', 'hr'], 'attendance_log' => ['admin', 'supervisor'],
+    'create_department' => ['admin'], 'backup_restore' => ['admin'], 'geofence' => ['admin'],
+    'monthly_report' => ['admin', 'hr', 'viewer'], 'excuse_form' => ['admin', 'hr', 'supervisor'],
+    'tally_sheet' => ['admin', 'supervisor', 'viewer'], 'employee_profiles' => ['admin', 'hr'], 'user_management' => ['admin'],
+];
+require_roles($pageRoles[$activePage] ?? ['admin']);
+$adminPageLinks = array_filter($adminPageLinks, static fn (string $key): bool => in_array(current_user_role(), $pageRoles[$key] ?? [], true), ARRAY_FILTER_USE_KEY);
 
 $records = attendance_for_date($selectedDate, $selectedDepartment);
 $monthlyRecords = attendance_for_month($selectedMonth, $selectedDepartment);
+$monthlyExcuses = excuses_for_month($selectedMonth, $selectedDepartment);
 $dates = all_attendance_dates();
 $employees = all_employees();
 $departments = all_departments();
@@ -243,6 +281,7 @@ $monthlyTotals = [
     'incomplete' => 0,
     'late' => 0,
     'worked_minutes' => 0,
+    'excuses' => count($monthlyExcuses),
 ];
 
 $monthStart = DateTimeImmutable::createFromFormat('Y-m-d', $selectedMonth . '-01');
@@ -298,6 +337,7 @@ $monthlySummaryCards = [
     ['label' => 'Complete', 'value' => (string) $monthlyTotals['complete'], 'note' => 'Finished shifts'],
     ['label' => 'Late Arrivals', 'value' => (string) $monthlyTotals['late'], 'note' => 'Clock-ins after shift start'],
     ['label' => 'Incomplete', 'value' => (string) $monthlyTotals['incomplete'], 'note' => 'Missing clock-out or clock-in'],
+    ['label' => 'Excuses', 'value' => (string) $monthlyTotals['excuses'], 'note' => 'Employee excuse forms submitted'],
 ];
 
 $monthlyMaxBar = max(1, ...array_map(static fn (array $item): int => max((int) $item['total'], (int) $item['complete'], (int) $item['late'], 1), $monthlyReportDays));

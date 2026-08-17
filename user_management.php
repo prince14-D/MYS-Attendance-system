@@ -1,0 +1,18 @@
+<?php
+declare(strict_types=1);
+
+$_GET['page'] = 'user_management';
+require_once __DIR__ . '/admin_bootstrap.php';
+
+$pageTitle = 'User Management';
+$extraHeadHtml = '<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">';
+require_once __DIR__ . '/admin_shell_start.php';
+$users = read_users();
+?>
+<div class="dashboard-hero panel"><div class="dashboard-title"><span class="eyebrow">Administrator Only</span><h1>User Management</h1><p class="muted">Create accounts, assign permissions, change passwords, and remove user accounts.</p></div></div>
+<?php if ($registrationResult !== null): ?><div class="alert <?= $registrationResult['ok'] ? 'success' : 'error' ?>"><?= h($registrationResult['message']) ?></div><?php endif; ?>
+<div class="row g-4">
+    <div class="col-12 col-xl-4"><section class="admin-box user-management-card"><span class="eyebrow">New Account</span><h2>Create User</h2><form method="post" class="stacked-form"><input type="hidden" name="admin_action" value="create_system_user"><label for="new_username">Username</label><input class="form-control" id="new_username" name="username" required><label for="new_password">Password</label><input class="form-control" id="new_password" name="password" type="password" minlength="8" required><label for="new_role">Role</label><select class="form-select" id="new_role" name="role" required><option value="hr">HR</option><option value="supervisor">Supervisor</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select><button class="btn btn-primary mt-3" type="submit">Create User</button></form></section></div>
+    <div class="col-12 col-xl-8"><section class="admin-box user-management-card"><div class="section-heading"><div><span class="eyebrow">Accounts</span><h2>System Users</h2></div><p class="muted">Roles: Admin, HR, Supervisor, Viewer.</p></div><div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Username</th><th>Role</th><th>Created</th><th>Update / Password</th><th>Delete</th></tr></thead><tbody><?php foreach ($users as $userIndex => $user): ?><?php $userFormId = 'user-update-' . $userIndex; ?><tr><td><strong><?= h($user['username']) ?></strong><?= $user['username'] === current_username() ? ' <span class="badge text-bg-primary">You</span>' : '' ?><form method="post" id="<?= h($userFormId) ?>"><input type="hidden" name="admin_action" value="update_system_user"><input type="hidden" name="username" value="<?= h($user['username']) ?>"></form></td><td><select class="form-select form-select-sm" name="role" form="<?= h($userFormId) ?>"><?php foreach (roles() as $role): ?><option value="<?= h($role) ?>" <?= $role === ($user['role'] ?? '') ? 'selected' : '' ?>><?= h(ucfirst($role)) ?></option><?php endforeach; ?></select></td><td><?= h(date('M j, Y', strtotime($user['created_at'] ?? 'now'))) ?></td><td><input class="form-control form-control-sm" name="new_password" form="<?= h($userFormId) ?>" type="password" minlength="8" placeholder="New password (optional)"><button class="btn btn-sm btn-outline-primary mt-1" type="submit" form="<?= h($userFormId) ?>">Save Changes</button></td><td><form method="post" onsubmit="return confirm('Delete user <?= h($user['username']) ?>?');"><input type="hidden" name="admin_action" value="delete_system_user"><input type="hidden" name="username" value="<?= h($user['username']) ?>"><button class="btn btn-sm btn-outline-danger" type="submit" <?= $user['username'] === current_username() ? 'disabled' : '' ?>>Delete</button></form></td></tr><?php endforeach; ?></tbody></table></div></section></div>
+</div>
+<?php require_once __DIR__ . '/admin_shell_end.php'; ?>

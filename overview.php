@@ -80,49 +80,12 @@ require_once __DIR__ . '/admin_shell_start.php';
 		<p class="muted">Jump straight to the section you need.</p>
 	</div>
 
+	<?php $quickDescriptions = ['home' => 'Your attendance snapshot and permitted shortcuts.', 'attendance_log' => 'Review the daily attendance records.', 'monthly_report' => 'Review monthly attendance and exports.', 'excuse_form' => 'Prepare and review employee excuse forms.', 'employees' => 'Manage employee records and details.', 'register_employee' => 'Register employees and import staff data.', 'create_department' => 'Create and manage departments.', 'backup_restore' => 'Download backups and restore records.', 'employee_profiles' => 'View employee profiles and documents.', 'tally_sheet' => 'Review the attendance completion tally.', 'user_management' => 'Create users and manage account access.']; ?>
 	<div class="row g-3">
-		<div class="col-12 col-md-6 col-xl-4">
-			<a class="admin-box overview-link-card bootstrap-overview-card" href="attendance_log.php?date=<?= h(urlencode($selectedDate)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">
-				<span class="eyebrow">Open Page</span>
-				<h2>Attendance Log</h2>
-				<p class="muted">Review, filter, print, and export the daily records.</p>
-			</a>
-		</div>
-		<div class="col-12 col-md-6 col-xl-4">
-			<a class="admin-box overview-link-card bootstrap-overview-card" href="monthly_report.php?month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">
-				<span class="eyebrow">Open Page</span>
-				<h2>Monthly Report</h2>
-				<p class="muted">See trend charts and export monthly summaries.</p>
-			</a>
-		</div>
-		<div class="col-12 col-md-6 col-xl-4">
-			<a class="admin-box overview-link-card bootstrap-overview-card" href="employees.php">
-				<span class="eyebrow">Open Page</span>
-				<h2>Employees</h2>
-				<p class="muted">Edit staff details, departments, and profile previews.</p>
-			</a>
-		</div>
-		<div class="col-12 col-md-6 col-xl-4">
-			<a class="admin-box overview-link-card bootstrap-overview-card" href="register_employee.php">
-				<span class="eyebrow">Open Page</span>
-				<h2>Register Employee</h2>
-				<p class="muted">Create departments, add new staff, and import employee files.</p>
-			</a>
-		</div>
-		<div class="col-12 col-md-6 col-xl-4">
-			<a class="admin-box overview-link-card bootstrap-overview-card" href="create_department.php">
-				<span class="eyebrow">Open Page</span>
-				<h2>Create Department</h2>
-				<p class="muted">Add or manage department names for cleaner reporting.</p>
-			</a>
-		</div>
-		<div class="col-12 col-md-6 col-xl-4">
-			<a class="admin-box overview-link-card bootstrap-overview-card" href="backup_restore.php">
-				<span class="eyebrow">Open Page</span>
-				<h2>Backup &amp; Restore</h2>
-				<p class="muted">Download backups and restore records when needed.</p>
-			</a>
-		</div>
+		<?php foreach ($adminPageLinks as $pageKey => $pageLink): ?>
+			<?php if ($pageKey === 'home') { continue; } ?>
+			<div class="col-12 col-md-6 col-xl-4"><a class="admin-box overview-link-card bootstrap-overview-card" href="<?= h($pageLink['href']) ?>"><span class="eyebrow"><?= h(ucfirst(current_user_role())) ?> Access</span><h2><?= h($pageLink['label']) ?></h2><p class="muted"><?= h($quickDescriptions[$pageKey] ?? 'Open this workspace page.') ?></p></a></div>
+		<?php endforeach; ?>
 	</div>
 </div>
 <?php

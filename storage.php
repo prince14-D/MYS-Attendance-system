@@ -118,6 +118,226 @@ function write_departments(array $departments): void
     fclose($handle);
 }
 
+function read_excuses(): array
+{
+    $contents = file_get_contents(EXCUSES_FILE);
+    $excuses = json_decode($contents ?: '[]', true);
+
+    return is_array($excuses) ? $excuses : [];
+}
+
+function write_excuses(array $excuses): void
+{
+    $handle = fopen(EXCUSES_FILE, 'c+');
+
+    if (!$handle) {
+        throw new RuntimeException('Unable to open excuse storage.');
+    }
+
+    flock($handle, LOCK_EX);
+    ftruncate($handle, 0);
+    rewind($handle);
+    fwrite($handle, json_encode($excuses, JSON_PRETTY_PRINT));
+    fflush($handle);
+    flock($handle, LOCK_UN);
+    fclose($handle);
+}
+
+function read_employee_documents(): array
+{
+    $contents = file_get_contents(EMPLOYEE_DOCUMENTS_FILE);
+    $documents = json_decode($contents ?: '[]', true);
+
+    return is_array($documents) ? $documents : [];
+}
+
+function write_employee_documents(array $documents): void
+{
+    $handle = fopen(EMPLOYEE_DOCUMENTS_FILE, 'c+');
+    if (!$handle) {
+        throw new RuntimeException('Unable to open employee document storage.');
+    }
+    flock($handle, LOCK_EX);
+    ftruncate($handle, 0);
+    rewind($handle);
+    fwrite($handle, json_encode($documents, JSON_PRETTY_PRINT));
+    fflush($handle);
+    flock($handle, LOCK_UN);
+    fclose($handle);
+}
+
+function employee_documents_for(string $employeeNumber): array
+{
+    $employeeNumber = normalize_employee_number($employeeNumber);
+    $documents = array_values(array_filter(read_employee_documents(), static fn (array $document): bool => ($document['employee_number'] ?? '') === $employeeNumber));
+    usort($documents, static fn (array $a, array $b): int => strcmp((string) ($b['uploaded_at'] ?? ''), (string) ($a['uploaded_at'] ?? '')));
+    return $documents;
+}
+
+function upload_employee_document(string $employeeNumber, array $upload, string $label): array
+{
+    $employeeNumber = normalize_employee_number($employeeNumber);
+    $employee = find_employee($employeeNumber);
+    $label = normalize_person_name($label);
+
+    if ($employee === null) {
+        return ['ok' => false, 'message' => 'Employee was not found.'];
+    }
+    if (($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file((string) ($upload['tmp_name'] ?? ''))) {
+        return ['ok' => false, 'message' => 'Choose a document to upload.'];
+    }
+    if ((int) ($upload['size'] ?? 0) > 10 * 1024 * 1024) {
+        return ['ok' => false, 'message' => 'Documents must be 10 MB or smaller.'];
+    }
+
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file((string) $upload['tmp_name']);
+    $allowed = [
+        'application/pdf' => 'pdf', 'image/jpeg' => 'jpg', 'image/png' => 'png',
+        'application/msword' => 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+        'application/vnd.ms-excel' => 'xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+    ];
+    if (!isset($allowed[$mime])) {
+        return ['ok' => false, 'message' => 'Upload a PDF, image, Word, or Excel file.'];
+    }
+
+    $id = 'DOC-' . date('YmdHis') . '-' . bin2hex(random_bytes(4));
+    $filename = $id . '.' . $allowed[$mime];
+    if (!move_uploaded_file((string) $upload['tmp_name'], EMPLOYEE_DOCUMENTS_DIR . '/' . $filename)) {
+        return ['ok' => false, 'message' => 'Unable to save the uploaded document.'];
+    }
+    $documents = read_employee_documents();
+    $documents[] = ['document_id' => $id, 'employee_number' => $employeeNumber, 'label' => $label !== '' ? $label : 'Employee document', 'original_name' => basename((string) ($upload['name'] ?? 'document')), 'filename' => $filename, 'mime_type' => $mime, 'size' => (int) $upload['size'], 'uploaded_at' => date('Y-m-d H:i:s')];
+    write_employee_documents($documents);
+    return ['ok' => true, 'message' => 'Document uploaded successfully.'];
+}
+
+function find_employee_document(string $documentId): ?array
+{
+    foreach (read_employee_documents() as $document) {
+        if (($document['document_id'] ?? '') === $documentId) {
+            return $document;
+        }
+    }
+    return null;
+}
+
+function delete_employee_document(string $documentId, string $employeeNumber): array
+{
+    $employeeNumber = normalize_employee_number($employeeNumber);
+    $documents = read_employee_documents();
+    $documentIndex = null;
+
+    foreach ($documents as $index => $document) {
+        if (($document['document_id'] ?? '') === $documentId && ($document['employee_number'] ?? '') === $employeeNumber) {
+            $documentIndex = $index;
+            break;
+        }
+    }
+    if ($documentIndex === null) {
+        return ['ok' => false, 'message' => 'Document was not found for this employee.'];
+    }
+
+    $filename = basename((string) ($documents[$documentIndex]['filename'] ?? ''));
+    $path = EMPLOYEE_DOCUMENTS_DIR . '/' . $filename;
+    if ($filename !== '' && is_file($path) && !unlink($path)) {
+        return ['ok' => false, 'message' => 'Unable to remove the document file.'];
+    }
+    array_splice($documents, $documentIndex, 1);
+    write_employee_documents($documents);
+    return ['ok' => true, 'message' => 'Employee document deleted.'];
+}
+
+function excuses_for_month(string $month, string $departmentId = ''): array
+{
+    $excuses = array_values(array_filter(read_excuses(), static function (array $excuse) use ($month, $departmentId): bool {
+        $startDate = (string) ($excuse['absence_start'] ?? '');
+        $endDate = (string) ($excuse['absence_end'] ?? $startDate);
+        $monthStart = $month . '-01';
+        $monthEnd = date('Y-m-t', strtotime($monthStart));
+        $matchesMonth = $startDate !== '' && $startDate <= $monthEnd && $endDate >= $monthStart;
+        $matchesDepartment = $departmentId === '' || (string) ($excuse['department_id'] ?? '') === $departmentId;
+
+        return $matchesMonth && $matchesDepartment;
+    }));
+
+    usort($excuses, static fn (array $a, array $b): int => strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? '')));
+
+    return $excuses;
+}
+
+function create_excuse(array $input): array
+{
+    $employeeNumber = normalize_employee_number((string) ($input['employee_number'] ?? ''));
+    $employee = $employeeNumber !== '' ? find_employee($employeeNumber) : null;
+    $absenceStart = trim((string) ($input['absence_start'] ?? ''));
+    $absenceEnd = trim((string) ($input['absence_end'] ?? ''));
+    $reason = trim((string) ($input['reason'] ?? ''));
+    $otherReason = normalize_person_name((string) ($input['other_reason'] ?? ''));
+
+    if ($employee === null) {
+        return ['ok' => false, 'message' => 'Select a registered employee.'];
+    }
+
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $absenceStart) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $absenceEnd) || $absenceEnd < $absenceStart) {
+        return ['ok' => false, 'message' => 'Enter a valid absence start and end date.'];
+    }
+
+    $allowedReasons = ['Medical Appointment', 'Illness', 'Family Emergency', 'Official Assignment', 'Other'];
+    if (!in_array($reason, $allowedReasons, true)) {
+        return ['ok' => false, 'message' => 'Choose a valid excuse reason.'];
+    }
+
+    if ($reason === 'Other' && $otherReason === '') {
+        return ['ok' => false, 'message' => 'Specify the other excuse reason.'];
+    }
+
+    $id = 'EXC-' . date('YmdHis') . '-' . bin2hex(random_bytes(3));
+    $excuse = [
+        'excuse_id' => $id,
+        'employee_number' => $employeeNumber,
+        'employee_name' => (string) ($employee['employee_name'] ?? ''),
+        'position' => (string) ($employee['position'] ?? ''),
+        'department_id' => (string) ($employee['department_id'] ?? ''),
+        'department_name' => (string) ($employee['department_name'] ?? ''),
+        'absence_start' => $absenceStart,
+        'absence_end' => $absenceEnd,
+        'absence_time' => trim((string) ($input['absence_time'] ?? '')),
+        'reason' => $reason,
+        'other_reason' => $otherReason,
+        'supporting_documents' => array_values(array_intersect((array) ($input['supporting_documents'] ?? []), ['Medical Certificate', 'Official Assignment Letter', 'Other'])),
+        'supervisor_name' => normalize_person_name((string) ($input['supervisor_name'] ?? '')),
+        'supervisor_decision' => in_array(($input['supervisor_decision'] ?? ''), ['Approved', 'Not Approved'], true) ? $input['supervisor_decision'] : '',
+        'supervisor_comments' => trim((string) ($input['supervisor_comments'] ?? '')),
+        'hr_reviewed_by' => normalize_person_name((string) ($input['hr_reviewed_by'] ?? '')),
+        'hr_approved' => in_array(($input['hr_approved'] ?? ''), ['Yes', 'No'], true) ? $input['hr_approved'] : '',
+        'created_at' => date('Y-m-d H:i:s'),
+    ];
+
+    $excuses = read_excuses();
+    $excuses[] = $excuse;
+    write_excuses($excuses);
+
+    return ['ok' => true, 'message' => 'Employee excuse form saved.', 'excuse' => $excuse];
+}
+
+function review_excuse(string $excuseId, string $reviewedBy, string $decision): array
+{
+    $decision = $decision === 'Approved' ? 'Yes' : ($decision === 'Denied' ? 'No' : '');
+    $reviewedBy = normalize_person_name($reviewedBy);
+    if ($excuseId === '' || $decision === '' || $reviewedBy === '') return ['ok' => false, 'message' => 'Enter the reviewer name and an approval decision.'];
+    $excuses = read_excuses();
+    foreach ($excuses as &$excuse) {
+        if (($excuse['excuse_id'] ?? '') === $excuseId) {
+            $excuse['hr_reviewed_by'] = $reviewedBy;
+            $excuse['hr_approved'] = $decision;
+            $excuse['reviewed_at'] = date('Y-m-d H:i:s');
+            write_excuses($excuses);
+            return ['ok' => true, 'message' => 'Excuse request ' . strtolower($decision === 'Yes' ? 'approved' : 'denied') . '.'];
+        }
+    }
+    return ['ok' => false, 'message' => 'Excuse request not found.'];
+}
+
 function default_geofence_settings(): array
 {
     return [

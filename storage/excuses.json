@@ -1,0 +1,45 @@
+[
+    {
+        "excuse_id": "EXC-20260817225846-8b92b7",
+        "employee_number": "800042",
+        "employee_name": "Cynthia S. Peters",
+        "position": "Driver",
+        "department_id": "",
+        "department_name": "Unassigned",
+        "absence_start": "2026-08-17",
+        "absence_end": "2026-08-17",
+        "absence_time": "4pm",
+        "reason": "Official Assignment",
+        "other_reason": "",
+        "supporting_documents": [
+            "Other"
+        ],
+        "supervisor_name": "hhh",
+        "supervisor_decision": "",
+        "supervisor_comments": "jj",
+        "hr_reviewed_by": "yy",
+        "hr_approved": "Yes",
+        "created_at": "2026-08-17 22:58:46"
+    },
+    {
+        "excuse_id": "EXC-20260817235231-f93c8f",
+        "employee_number": "911001",
+        "employee_name": "Oral Barclay",
+        "position": "Coordinator",
+        "department_id": "national-youth-pathway-program",
+        "department_name": "NATIONAL YOUTH PATHWAY PROGRAM",
+        "absence_start": "2026-08-19",
+        "absence_end": "2026-08-19",
+        "absence_time": "4pm",
+        "reason": "Illness",
+        "other_reason": "",
+        "supporting_documents": [],
+        "supervisor_name": "",
+        "supervisor_decision": "",
+        "supervisor_comments": "",
+        "hr_reviewed_by": "admin",
+        "hr_approved": "No",
+        "created_at": "2026-08-17 23:52:31",
+        "reviewed_at": "2026-08-17 23:56:49"
+    }
+]

@@ -96,6 +96,7 @@ a {
     border-color: var(--blue-dark);
     color: #ffffff;
 }
+.nav-role { font-size: 13px; font-weight: 700; opacity: .9; }
 
 .admin-workspace .content {
     width: 100%;
@@ -112,6 +113,31 @@ body[data-admin-page="backup_restore"] [data-admin-page]:not([data-admin-page="b
 body[data-admin-page="geofence"] [data-admin-page]:not([data-admin-page="geofence"]),
 body[data-admin-page="monthly_report"] [data-admin-page]:not([data-admin-page="monthly_report"]) {
     display: none !important;
+}
+
+body[data-admin-page="excuse_form"] [data-admin-page]:not([data-admin-page="excuse_form"]) { display: none !important; }
+body[data-admin-page="tally_sheet"] [data-admin-page]:not([data-admin-page="tally_sheet"]) { display: none !important; }
+body[data-admin-page="employee_profiles"] [data-admin-page]:not([data-admin-page="employee_profiles"]) { display: none !important; }
+
+.excuse-form-card { padding: clamp(20px, 4vw, 38px); }
+.excuse-register { margin-top: 24px; padding: clamp(18px, 3vw, 28px); }
+.tally-controls { margin-bottom: 24px; padding: 22px; }.tally-paper { background: #fff; border: 1px solid #8390a1; box-shadow: var(--panel-shadow); padding: 24px; }.tally-header { text-align: center; }.tally-header h2 { font-size: 24px; margin: 2px 0; }.tally-header h3 { margin: 18px 0 6px; }.tally-header p { font-size: 13px; margin: 3px 0; }.tally-key { display: flex; gap: 22px; justify-content: flex-end; margin: 12px 0; font-size: 12px; }.tally-key b, .tally-mark.complete, .tally-total.complete { color: #087443; }.tally-mark.incomplete, .tally-total.incomplete { color: #b42318; }.tally-table-wrap { overflow-x: auto; }.tally-table { border-collapse: collapse; min-width: 100%; width: max-content; }.tally-table th, .tally-table td { border: 1px solid #6e7783; font-size: 11px; min-width: 31px; padding: 4px; text-align: center; }.tally-table th { background: #edf2f8; color: #172d4d; }.tally-table th small, .tally-name small { display: block; font-size: 9px; font-weight: 400; }.tally-number { min-width: 40px !important; }.tally-name { min-width: 180px !important; text-align: left !important; }.tally-mark { font-size: 16px !important; font-weight: 800; }.tally-total { font-weight: 800; min-width: 38px !important; }.tally-empty { padding: 22px !important; }.tally-footer { display: flex; font-size: 11px; justify-content: space-between; margin-top: 26px; }
+.employee-profiles-layout { display: grid; gap: 20px; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); }.employee-profile-directory { align-self: start; padding: 18px; position: sticky; top: 92px; }.profile-directory-list { display: grid; gap: 8px; max-height: 650px; overflow-y: auto; }.profile-directory-item { border: 1px solid var(--line); border-radius: 10px; padding: 10px; text-decoration: none; }.profile-directory-item.active { background: var(--blue); color: #fff; }.profile-directory-item small { display: block; font-size: 11px; }.employee-profile-card, .employee-document-card, .employee-history-card { margin-bottom: 20px; padding: 26px; }.employee-profile-heading { align-items: center; display: flex; gap: 18px; }.employee-profile-heading h2 { margin: 3px 0; }.employee-profile-avatar { align-items: center; background: var(--blue-soft); border: 2px solid var(--blue); border-radius: 50%; color: var(--blue); display: flex; font-size: 32px; font-weight: 800; height: 86px; justify-content: center; overflow: hidden; width: 86px; }.employee-profile-avatar img { height: 100%; object-fit: cover; width: 100%; }.employee-profile-details { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 24px 0 0; }.employee-profile-details dt { color: var(--muted); font-size: 12px; }.employee-profile-details dd { font-weight: 700; margin: 3px 0 0; }
+.employee-profile-edit { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 16px; }.employee-profile-edit summary { color: var(--blue); cursor: pointer; font-weight: 800; }
+.user-management-card { height: 100%; padding: 26px; }.user-management-card .stacked-form { gap: 10px; }
+.public-excuse-panel { max-width: 650px; padding: clamp(24px, 5vw, 44px); width: 100%; }
+.excuse-review summary { color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 700; }
+@media (max-width: 820px) { .employee-profiles-layout { grid-template-columns: 1fr; }.employee-profile-directory { position: static; }.profile-directory-list { max-height: 240px; }.employee-profile-details { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.excuse-paper { background: #fff; border: 1px solid #b8c2d1; box-shadow: var(--panel-shadow); margin: 0 auto; max-width: 850px; padding: 42px 56px; }
+.excuse-paper-header { border-bottom: 2px solid var(--blue); margin-bottom: 22px; text-align: center; }
+.excuse-paper-header h2 { font-size: 26px; margin: 3px 0; }.excuse-paper-header h3 { margin: 22px 0 12px; }.excuse-paper-header p { margin: 0 0 8px; }
+.excuse-paper h4 { border-bottom: 1px solid #9ba9bd; color: var(--blue-dark); margin: 22px 0 12px; padding-bottom: 5px; }.excuse-paper p { margin: 7px 0; }
+.excuse-paper-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 30px; }.excuse-signature { margin-top: 48px; text-align: center; }.excuse-signature div { margin-top: 42px; text-align: left; }
+
+@media print {
+    .excuse-no-print, .tally-no-print, .admin-sidebar, .topbar, .profile-modal { display: none !important; }
+    .admin-workspace { display: block; padding: 0; }.excuse-paper { border: 0; box-shadow: none; max-width: none; padding: 18px; }
+    .tally-paper { border: 0; box-shadow: none; padding: 0; }.tally-table th, .tally-table td { font-size: 8px; min-width: 20px; padding: 2px; }.tally-name { min-width: 130px !important; }.tally-footer { margin-top: 16px; }
 }
 
 body[data-admin-page="home"] .setup-section,

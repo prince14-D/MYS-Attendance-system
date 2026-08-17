@@ -759,6 +759,50 @@ function download_monthly_pdf(array $monthRecords, string $month, string $depart
     exit;
 }
 
+function build_excuse_pdf(array $excuse): string
+{
+    $field = static fn (string $key, string $fallback = '-'): string => trim((string) ($excuse[$key] ?? '')) ?: $fallback;
+    $reason = $field('reason');
+    if ($reason === 'Other' && $field('other_reason', '') !== '') {
+        $reason .= ': ' . $field('other_reason', '');
+    }
+    $documents = implode(', ', (array) ($excuse['supporting_documents'] ?? [])) ?: 'None';
+    $lines = [
+        ['Employee Information', true],
+        ['Full Name: ' . $field('employee_name'), false], ['Position/Title: ' . $field('position'), false], ['Department/Division: ' . $field('department_name'), false], ['Employee ID: ' . $field('employee_number'), false],
+        ['Excuse Details', true],
+        ['Date(s) of Absence: ' . $field('absence_start') . ' to ' . $field('absence_end'), false], ['Time (if partial absence): ' . $field('absence_time'), false], ['Reason for Excuse: ' . $reason, false],
+        ['Supporting Documentation', true], ['Attached Documents: ' . $documents, false],
+        ['Supervisor Section', true], ['Supervisor Name: ' . $field('supervisor_name'), false], ['Decision: ' . $field('supervisor_decision', 'Pending'), false], ['Comments: ' . $field('supervisor_comments'), false],
+        ['HR/Administration Section', true], ['Reviewed By: ' . $field('hr_reviewed_by'), false], ['Approved: ' . $field('hr_approved', 'Pending'), false],
+    ];
+    $content = "1 1 1 rg\n0 0 595 842 re f\n0.07 0.25 0.48 rg\n0 770 595 72 re f\n" . pdf_logo_block(34, 786) . "1 1 1 rg\n";
+    $content .= pdf_text('REPUBLIC OF LIBERIA', 185, 816, 14, 'F2') . pdf_text('Ministry of Youth and Sports', 142, 796, 16, 'F2') . pdf_text('Office of the Human Resource', 190, 780, 10) . pdf_text('Employee Excuse Form', 204, 750, 13, 'F2');
+    $y = 720;
+    foreach ($lines as [$text, $heading]) {
+        if ($heading) { $content .= "0.92 0.95 0.99 rg\n34 " . ($y - 5) . " 527 21 re f\n0.07 0.25 0.48 rg\n" . pdf_text($text, 43, $y, 10, 'F2'); }
+        else { $content .= "0 0 0 rg\n" . pdf_text(pdf_shorten_text($text, 490, 10), 48, $y, 10); }
+        $y -= $heading ? 29 : 20;
+    }
+    $content .= "0 0 0 rg\n" . pdf_line(238, 82, 505, 82) . pdf_text('Human Resource Division', 235, 108, 10, 'F2') . pdf_text('Signature & Date', 52, 78, 10);
+    $objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [5 0 R] /Count 1 >>', '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>', '<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 6 0 R >>', '<< /Length ' . strlen($content) . " >>\nstream\n" . $content . 'endstream'];
+    $pdf = "%PDF-1.4\n"; $offsets = [0];
+    foreach ($objects as $number => $object) { $offsets[] = strlen($pdf); $pdf .= ($number + 1) . " 0 obj\n" . $object . "\nendobj\n"; }
+    $xref = strlen($pdf); $pdf .= "xref\n0 " . (count($objects) + 1) . "\n0000000000 65535 f \n";
+    for ($i = 1; $i <= count($objects); $i++) { $pdf .= sprintf("%010d 00000 n \n", $offsets[$i]); }
+    return $pdf . "trailer\n<< /Size " . (count($objects) + 1) . " /Root 1 0 R >>\nstartxref\n" . $xref . "\n%%EOF";
+}
+
+function download_excuse_pdf(array $excuse): never
+{
+    $pdf = build_excuse_pdf($excuse);
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="employee-excuse-' . preg_replace('/[^A-Za-z0-9_-]/', '-', (string) ($excuse['excuse_id'] ?? 'form')) . '.pdf"');
+    header('Content-Length: ' . strlen($pdf));
+    echo $pdf;
+    exit;
+}
+
 function export_employee_rows(array $employees): array
 {
     $rows = [
@@ -1015,6 +1059,17 @@ if ($report === 'employees') {
         'pdf' => download_employees_pdf($employees),
         default => download_employees_pdf($employees),
     };
+}
+
+if ($report === 'excuse') {
+    $excuseId = trim((string) ($_GET['id'] ?? ''));
+    foreach (read_excuses() as $excuse) {
+        if (($excuse['excuse_id'] ?? '') === $excuseId) {
+            download_excuse_pdf($excuse);
+        }
+    }
+    http_response_code(404);
+    exit('Excuse form not found.');
 }
 
 if ($report === 'monthly') {

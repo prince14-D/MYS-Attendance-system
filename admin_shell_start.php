@@ -25,6 +25,7 @@ $pageTitle = $pageTitle ?? 'Admin Dashboard';
                 </div>
             </div>
             <nav class="nav-links" aria-label="Main navigation">
+                <span class="nav-role"><?= h(ucfirst(current_user_role())) ?>: <?= h(current_username()) ?></span>
                 <a href="index.php">Clock Screen</a>
                 <a href="logout.php">Logout</a>
             </nav>

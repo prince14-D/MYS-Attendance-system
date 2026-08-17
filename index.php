@@ -53,6 +53,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 </div>
             </div>
             <nav class="nav-links" aria-label="Main navigation">
+                <a href="submit_excuse.php">Submit Excuse</a>
                 <a href="admin.php">Admin Login</a>
             </nav>
         </header>

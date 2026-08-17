@@ -27,6 +27,11 @@ require_once __DIR__ . '/admin_shell_start.php';
 		<small>Current reporting window</small>
 	</div>
 	<div class="stat-card register-mini-stat">
+		<span>Excuses</span>
+		<strong><?= h((string) $monthlyTotals['excuses']) ?></strong>
+		<small>Forms submitted this month</small>
+	</div>
+	<div class="stat-card register-mini-stat">
 		<span>Total Records</span>
 		<strong id="liveMonthlyTotalRecords"><?= h((string) $monthlyTotals['records']) ?></strong>
 		<small>All entries in selected month</small>
@@ -69,6 +74,7 @@ require_once __DIR__ . '/admin_shell_start.php';
 		</form>
 
 		<div class="export-links monthly-export-links">
+			<a class="btn btn-outline-primary" href="excuse_form.php?month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">Employee Excuse Form (<?= h((string) $monthlyTotals['excuses']) ?>)</a>
 			<a class="btn btn-outline-secondary" href="export.php?report=monthly&format=csv&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">CSV</a>
 			<a class="btn btn-outline-secondary" href="export.php?report=monthly&format=xls&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">Excel</a>
 			<a class="btn btn-outline-secondary" href="export.php?report=monthly&format=pdf&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">PDF</a>
