@@ -1,0 +1,47 @@
+[
+    {
+        "letter_id": "LTR-20260818132851-13d5c46e",
+        "employee_number": "069937",
+        "employee_name": "WILFRED S. K. PAYNE",
+        "position": "Administrative Assistant",
+        "department_id": "am-tvet",
+        "department_name": "AM-TVET",
+        "letter_type": "Transfer Letter",
+        "subject": "Computer",
+        "details": "kdfkdfksfk",
+        "issued_by": "Human Resource",
+        "issued_at": "2026-08-18 13:28:51",
+        "status": "Issued",
+        "notes": "dfdfdfd"
+    },
+    {
+        "letter_id": "LTR-20260818133126-808ef9f5",
+        "employee_number": "069937",
+        "employee_name": "WILFRED S. K. PAYNE",
+        "position": "Administrative Assistant",
+        "department_id": "am-tvet",
+        "department_name": "AM-TVET",
+        "letter_type": "Transfer Letter",
+        "subject": "Computer",
+        "details": "kdfkdfksfk",
+        "issued_by": "Human Resource",
+        "issued_at": "2026-08-18 13:31:26",
+        "status": "Issued",
+        "notes": "dfdfdfd"
+    },
+    {
+        "letter_id": "LTR-20260818134004-c0ad01c4",
+        "employee_number": "069937",
+        "employee_name": "WILFRED S. K. PAYNE",
+        "position": "Administrative Assistant",
+        "department_id": "am-tvet",
+        "department_name": "AM-TVET",
+        "letter_type": "Transfer Letter",
+        "subject": "Computer",
+        "details": "kdfkdfksfk",
+        "issued_by": "Human Resource",
+        "issued_at": "2026-08-18 13:40:04",
+        "status": "Issued",
+        "notes": "dfdfdfd"
+    }
+]

@@ -14,8 +14,10 @@ const EMPLOYEES_FILE = STORAGE_DIR . '/employees.json';
 const DEPARTMENTS_FILE = STORAGE_DIR . '/departments.json';
 const GEOFENCE_FILE = STORAGE_DIR . '/geofence.json';
 const EXCUSES_FILE = STORAGE_DIR . '/excuses.json';
+const LETTERS_FILE = STORAGE_DIR . '/letters.json';
 const EMPLOYEE_DOCUMENTS_FILE = STORAGE_DIR . '/employee_documents.json';
 const EMPLOYEE_DOCUMENTS_DIR = STORAGE_DIR . '/employee_documents';
+const DEVICES_FILE = STORAGE_DIR . '/devices.json';
 const USERS_FILE = STORAGE_DIR . '/users.json';
 const SHIFT_START_TIME = '09:00:00';
 const SHIFT_END_TIME = '17:00:00';
@@ -64,8 +66,16 @@ if (!file_exists(EXCUSES_FILE)) {
     file_put_contents(EXCUSES_FILE, json_encode([], JSON_PRETTY_PRINT));
 }
 
+if (!file_exists(LETTERS_FILE)) {
+    file_put_contents(LETTERS_FILE, json_encode([], JSON_PRETTY_PRINT));
+}
+
 if (!file_exists(EMPLOYEE_DOCUMENTS_FILE)) {
     file_put_contents(EMPLOYEE_DOCUMENTS_FILE, json_encode([], JSON_PRETTY_PRINT));
+}
+
+if (!file_exists(DEVICES_FILE)) {
+    file_put_contents(DEVICES_FILE, json_encode([], JSON_PRETTY_PRINT));
 }
 
 if (!file_exists(USERS_FILE)) {

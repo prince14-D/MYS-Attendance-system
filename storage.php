@@ -118,6 +118,86 @@ function write_departments(array $departments): void
     fclose($handle);
 }
 
+function read_letters(): array
+{
+    $contents = file_get_contents(LETTERS_FILE);
+    $letters = json_decode($contents ?: '[]', true);
+
+    return is_array($letters) ? $letters : [];
+}
+
+function write_letters(array $letters): void
+{
+    $handle = fopen(LETTERS_FILE, 'c+');
+
+    if (!$handle) {
+        throw new RuntimeException('Unable to open letter storage.');
+    }
+
+    flock($handle, LOCK_EX);
+    ftruncate($handle, 0);
+    rewind($handle);
+    fwrite($handle, json_encode($letters, JSON_PRETTY_PRINT));
+    fflush($handle);
+    flock($handle, LOCK_UN);
+    fclose($handle);
+}
+
+function create_letter(array $input, string $issuedBy): array
+{
+    $employeeNumber = normalize_employee_number((string) ($input['employee_number'] ?? ''));
+    $employee = $employeeNumber !== '' ? find_employee($employeeNumber) : null;
+    $letterType = trim((string) ($input['letter_type'] ?? ''));
+    $subject = trim((string) ($input['subject'] ?? ''));
+    $details = trim((string) ($input['details'] ?? ''));
+    $issuer = normalize_person_name((string) ($input['issued_by'] ?? $issuedBy));
+    if ($issuer === '') {
+        $issuer = normalize_person_name($issuedBy);
+    }
+
+    if ($employee === null) {
+        return ['ok' => false, 'message' => 'Select a registered employee.'];
+    }
+
+    if (!in_array($letterType, ['Warning Letter', 'Transfer Letter'], true)) {
+        return ['ok' => false, 'message' => 'Select a valid letter type.'];
+    }
+
+    if ($subject === '') {
+        $subject = $letterType;
+    }
+
+    if ($details === '') {
+        $details = 'No additional details were provided.';
+    }
+
+    if ($issuer === '') {
+        $issuer = current_username();
+    }
+
+    $letter = [
+        'letter_id' => 'LTR-' . date('YmdHis') . '-' . bin2hex(random_bytes(4)),
+        'employee_number' => $employeeNumber,
+        'employee_name' => (string) ($employee['employee_name'] ?? ''),
+        'position' => (string) ($employee['position'] ?? ''),
+        'department_id' => (string) ($employee['department_id'] ?? ''),
+        'department_name' => (string) ($employee['department_name'] ?? 'Unassigned'),
+        'letter_type' => $letterType,
+        'subject' => $subject,
+        'details' => $details,
+        'issued_by' => $issuer,
+        'issued_at' => date('Y-m-d H:i:s'),
+        'status' => 'Issued',
+        'notes' => trim((string) ($input['notes'] ?? '')),
+    ];
+
+    $letters = read_letters();
+    $letters[] = $letter;
+    write_letters($letters);
+
+    return ['ok' => true, 'message' => $letterType . ' issued successfully.', 'letter' => $letter];
+}
+
 function read_excuses(): array
 {
     $contents = file_get_contents(EXCUSES_FILE);
@@ -216,6 +296,16 @@ function find_employee_document(string $documentId): ?array
     foreach (read_employee_documents() as $document) {
         if (($document['document_id'] ?? '') === $documentId) {
             return $document;
+        }
+    }
+    return null;
+}
+
+function find_letter(string $letterId): ?array
+{
+    foreach (read_letters() as $letter) {
+        if (($letter['letter_id'] ?? '') === $letterId) {
+            return $letter;
         }
     }
     return null;
@@ -338,6 +428,51 @@ function review_excuse(string $excuseId, string $reviewedBy, string $decision): 
     return ['ok' => false, 'message' => 'Excuse request not found.'];
 }
 
+function normalize_geofence_locations(?array $locations): array
+{
+    if (!is_array($locations)) {
+        return [];
+    }
+
+    $normalized = [];
+
+    foreach ($locations as $index => $location) {
+        if (!is_array($location)) {
+            continue;
+        }
+
+        $name = trim((string) ($location['name'] ?? 'Location ' . ($index + 1)));
+        $latitude = isset($location['latitude']) && is_numeric($location['latitude']) ? (float) $location['latitude'] : null;
+        $longitude = isset($location['longitude']) && is_numeric($location['longitude']) ? (float) $location['longitude'] : null;
+        $radiusMeters = isset($location['radius_meters']) && is_numeric($location['radius_meters'])
+            ? (int) round((float) $location['radius_meters'])
+            : 150;
+
+        if ($latitude === null || $longitude === null) {
+            continue;
+        }
+
+        if ($latitude < -90 || $latitude > 90) {
+            continue;
+        }
+
+        if ($longitude < -180 || $longitude > 180) {
+            continue;
+        }
+
+        $radiusMeters = max(20, min(5000, $radiusMeters));
+
+        $normalized[] = [
+            'name' => $name === '' ? 'Location ' . ($index + 1) : $name,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'radius_meters' => $radiusMeters,
+        ];
+    }
+
+    return $normalized;
+}
+
 function default_geofence_settings(): array
 {
     return [
@@ -345,6 +480,7 @@ function default_geofence_settings(): array
         'latitude' => null,
         'longitude' => null,
         'radius_meters' => 150,
+        'locations' => [],
         'updated_at' => date('Y-m-d H:i:s'),
     ];
 }
@@ -360,27 +496,39 @@ function read_geofence_settings(): array
     }
 
     $enabled = (bool) ($settings['enabled'] ?? false);
-    $latitude = isset($settings['latitude']) && is_numeric($settings['latitude']) ? (float) $settings['latitude'] : null;
-    $longitude = isset($settings['longitude']) && is_numeric($settings['longitude']) ? (float) $settings['longitude'] : null;
-    $radiusMeters = isset($settings['radius_meters']) && is_numeric($settings['radius_meters'])
+    $legacyLatitude = isset($settings['latitude']) && is_numeric($settings['latitude']) ? (float) $settings['latitude'] : null;
+    $legacyLongitude = isset($settings['longitude']) && is_numeric($settings['longitude']) ? (float) $settings['longitude'] : null;
+    $legacyRadius = isset($settings['radius_meters']) && is_numeric($settings['radius_meters'])
         ? (int) round((float) $settings['radius_meters'])
         : (int) $defaults['radius_meters'];
 
-    if ($latitude !== null && ($latitude < -90 || $latitude > 90)) {
-        $latitude = null;
+    $locations = normalize_geofence_locations(is_array($settings['locations'] ?? null) ? $settings['locations'] : []);
+
+    if ($locations === [] && $legacyLatitude !== null && $legacyLongitude !== null) {
+        $locations = [[
+            'name' => 'Primary Location',
+            'latitude' => $legacyLatitude,
+            'longitude' => $legacyLongitude,
+            'radius_meters' => max(20, min(5000, $legacyRadius)),
+        ]];
     }
 
-    if ($longitude !== null && ($longitude < -180 || $longitude > 180)) {
-        $longitude = null;
+    if ($legacyLatitude !== null && ($legacyLatitude < -90 || $legacyLatitude > 90)) {
+        $legacyLatitude = null;
     }
 
-    $radiusMeters = max(20, min(5000, $radiusMeters));
+    if ($legacyLongitude !== null && ($legacyLongitude < -180 || $legacyLongitude > 180)) {
+        $legacyLongitude = null;
+    }
+
+    $legacyRadius = max(20, min(5000, $legacyRadius));
 
     return [
         'enabled' => $enabled,
-        'latitude' => $latitude,
-        'longitude' => $longitude,
-        'radius_meters' => $radiusMeters,
+        'latitude' => $legacyLatitude,
+        'longitude' => $legacyLongitude,
+        'radius_meters' => $legacyRadius,
+        'locations' => $locations,
         'updated_at' => (string) ($settings['updated_at'] ?? $defaults['updated_at']),
     ];
 }
@@ -402,45 +550,61 @@ function write_geofence_settings(array $settings): void
     fclose($handle);
 }
 
-function update_geofence_settings(string $enabled, string $latitude, string $longitude, string $radiusMeters): array
+function update_geofence_settings(string $enabled, string $latitude, string $longitude, string $radiusMeters, ?array $locations = null): array
 {
     $isEnabled = $enabled === '1';
     $latitude = trim($latitude);
     $longitude = trim($longitude);
     $radiusMeters = trim($radiusMeters);
+    $normalizedLocations = normalize_geofence_locations(is_array($locations) ? $locations : []);
 
     if ($isEnabled) {
-        if ($latitude === '' || $longitude === '') {
-            return ['ok' => false, 'message' => 'Set both latitude and longitude when geofence is enabled.'];
+        if ($normalizedLocations === []) {
+            if ($latitude === '' || $longitude === '') {
+                return ['ok' => false, 'message' => 'Add at least one valid geofence location or fill the primary location fields.'];
+            }
+
+            if (!is_numeric($latitude) || !is_numeric($longitude)) {
+                return ['ok' => false, 'message' => 'Latitude and longitude must be numeric values.'];
+            }
+
+            $parsedLatitude = (float) $latitude;
+            $parsedLongitude = (float) $longitude;
+
+            if ($parsedLatitude < -90 || $parsedLatitude > 90) {
+                return ['ok' => false, 'message' => 'Latitude must be between -90 and 90.'];
+            }
+
+            if ($parsedLongitude < -180 || $parsedLongitude > 180) {
+                return ['ok' => false, 'message' => 'Longitude must be between -180 and 180.'];
+            }
+
+            $parsedRadius = is_numeric($radiusMeters) ? (int) round((float) $radiusMeters) : 150;
+
+            if ($parsedRadius < 20 || $parsedRadius > 5000) {
+                return ['ok' => false, 'message' => 'Radius must be between 20 and 5000 meters.'];
+            }
+
+            $normalizedLocations = [[
+                'name' => 'Primary Location',
+                'latitude' => $parsedLatitude,
+                'longitude' => $parsedLongitude,
+                'radius_meters' => max(20, min(5000, $parsedRadius)),
+            ]];
         }
-
-        if (!is_numeric($latitude) || !is_numeric($longitude)) {
-            return ['ok' => false, 'message' => 'Latitude and longitude must be numeric values.'];
-        }
     }
 
-    $parsedLatitude = $latitude === '' ? null : (float) $latitude;
-    $parsedLongitude = $longitude === '' ? null : (float) $longitude;
-
-    if ($parsedLatitude !== null && ($parsedLatitude < -90 || $parsedLatitude > 90)) {
-        return ['ok' => false, 'message' => 'Latitude must be between -90 and 90.'];
-    }
-
-    if ($parsedLongitude !== null && ($parsedLongitude < -180 || $parsedLongitude > 180)) {
-        return ['ok' => false, 'message' => 'Longitude must be between -180 and 180.'];
-    }
-
-    $parsedRadius = is_numeric($radiusMeters) ? (int) round((float) $radiusMeters) : 150;
-
-    if ($parsedRadius < 20 || $parsedRadius > 5000) {
-        return ['ok' => false, 'message' => 'Radius must be between 20 and 5000 meters.'];
-    }
+    $legacyLocation = $normalizedLocations[0] ?? ['name' => 'Primary Location', 'latitude' => null, 'longitude' => null, 'radius_meters' => 150];
+    $legacyLatitude = $legacyLocation['latitude'] ?? null;
+    $legacyLongitude = $legacyLocation['longitude'] ?? null;
+    $legacyRadius = (int) ($legacyLocation['radius_meters'] ?? 150);
 
     $settings = [
         'enabled' => $isEnabled,
-        'latitude' => $parsedLatitude,
-        'longitude' => $parsedLongitude,
-        'radius_meters' => $parsedRadius,
+        'latitude' => $legacyLatitude,
+        'longitude' => $legacyLongitude,
+        'radius_meters' => max(20, min(5000, $legacyRadius)),
+        'locations' => $normalizedLocations,
         'updated_at' => date('Y-m-d H:i:s'),
     ];
 
@@ -452,12 +616,12 @@ function update_geofence_settings(string $enabled, string $latitude, string $lon
 function geofence_public_settings(): array
 {
     $settings = read_geofence_settings();
-
     return [
         'enabled' => (bool) ($settings['enabled'] ?? false),
         'latitude' => $settings['latitude'],
         'longitude' => $settings['longitude'],
         'radius_meters' => (int) ($settings['radius_meters'] ?? 150),
+        'locations' => is_array($settings['locations'] ?? null) ? $settings['locations'] : [],
     ];
 }
 
@@ -476,20 +640,209 @@ function geo_distance_meters(float $fromLat, float $fromLon, float $toLat, float
     return $earthRadius * $c;
 }
 
+function read_devices(): array
+{
+    $contents = file_get_contents(DEVICES_FILE);
+    $devices = json_decode($contents ?: '[]', true);
+
+    return is_array($devices) ? $devices : [];
+}
+
+function write_devices(array $devices): void
+{
+    $handle = fopen(DEVICES_FILE, 'c+');
+
+    if (!$handle) {
+        throw new RuntimeException('Unable to open device storage.');
+    }
+
+    flock($handle, LOCK_EX);
+    ftruncate($handle, 0);
+    rewind($handle);
+    fwrite($handle, json_encode($devices, JSON_PRETTY_PRINT));
+    fflush($handle);
+    flock($handle, LOCK_UN);
+    fclose($handle);
+}
+
+function normalize_device_id(string $deviceId): string
+{
+    $deviceId = strtolower(trim((string) $deviceId));
+    $deviceId = preg_replace('/[^a-z0-9-]+/', '-', $deviceId) ?? '';
+    return trim($deviceId, '-');
+}
+
+function register_device(string $deviceId, string $deviceName, string $locationName): array
+{
+    $normalizedId = normalize_device_id($deviceId);
+    $deviceName = trim(preg_replace('/\s+/', ' ', (string) $deviceName) ?? '');
+    $locationName = trim((string) $locationName);
+
+    if ($normalizedId === '') {
+        return ['ok' => false, 'message' => 'A valid device ID is required.'];
+    }
+
+    if ($deviceName === '') {
+        $deviceName = 'Phone ' . strtoupper(substr($normalizedId, 0, 8));
+    }
+
+    if ($locationName === '') {
+        return ['ok' => false, 'message' => 'Select the location this device belongs to.'];
+    }
+
+    $devices = read_devices();
+    $updatedAt = date('Y-m-d H:i:s');
+    $existingIndex = null;
+
+    foreach ($devices as $index => $device) {
+        if (is_array($device) && normalize_device_id((string) ($device['device_id'] ?? '')) === $normalizedId) {
+            $existingIndex = $index;
+            break;
+        }
+    }
+
+    $deviceRecord = [
+        'device_id' => $normalizedId,
+        'device_name' => $deviceName,
+        'location_name' => $locationName,
+        'registered_at' => is_array($devices[$existingIndex] ?? null) ? (string) ($devices[$existingIndex]['registered_at'] ?? $updatedAt) : $updatedAt,
+        'updated_at' => $updatedAt,
+    ];
+
+    if ($existingIndex !== null) {
+        $devices[$existingIndex] = $deviceRecord;
+    } else {
+        $devices[] = $deviceRecord;
+    }
+
+    write_devices($devices);
+
+    return ['ok' => true, 'message' => 'Device registered successfully for ' . $locationName . '.'];
+}
+
+function update_device(string $originalDeviceId, string $deviceId, string $deviceName, string $locationName): array
+{
+    $normalizedOriginalId = normalize_device_id($originalDeviceId);
+    $normalizedId = normalize_device_id($deviceId);
+    $deviceName = trim(preg_replace('/\s+/', ' ', (string) $deviceName) ?? '');
+    $locationName = trim((string) $locationName);
+
+    if ($normalizedOriginalId === '' || $normalizedId === '') {
+        return ['ok' => false, 'message' => 'A valid device ID is required.'];
+    }
+
+    if ($deviceName === '') {
+        $deviceName = 'Phone ' . strtoupper(substr($normalizedId, 0, 8));
+    }
+
+    if ($locationName === '') {
+        return ['ok' => false, 'message' => 'Select the location this device belongs to.'];
+    }
+
+    $devices = read_devices();
+    $targetIndex = null;
+
+    foreach ($devices as $index => $device) {
+        if (!is_array($device)) {
+            continue;
+        }
+
+        if (normalize_device_id((string) ($device['device_id'] ?? '')) === $normalizedOriginalId) {
+            $targetIndex = $index;
+            break;
+        }
+    }
+
+    if ($targetIndex === null) {
+        return ['ok' => false, 'message' => 'This device could not be found to update.'];
+    }
+
+    foreach ($devices as $index => $device) {
+        if ($index === $targetIndex) {
+            continue;
+        }
+
+        if (is_array($device) && normalize_device_id((string) ($device['device_id'] ?? '')) === $normalizedId) {
+            return ['ok' => false, 'message' => 'Another device is already using that ID.'];
+        }
+    }
+
+    $devices[$targetIndex] = [
+        'device_id' => $normalizedId,
+        'device_name' => $deviceName,
+        'location_name' => $locationName,
+        'registered_at' => (string) ($devices[$targetIndex]['registered_at'] ?? date('Y-m-d H:i:s')),
+        'updated_at' => date('Y-m-d H:i:s'),
+    ];
+
+    write_devices($devices);
+
+    return ['ok' => true, 'message' => 'Device updated successfully.'];
+}
+
+function delete_device(string $deviceId): array
+{
+    $normalizedId = normalize_device_id($deviceId);
+
+    if ($normalizedId === '') {
+        return ['ok' => false, 'message' => 'A valid device ID is required.'];
+    }
+
+    $devices = read_devices();
+    $filteredDevices = [];
+    $removed = false;
+
+    foreach ($devices as $device) {
+        if (!is_array($device)) {
+            continue;
+        }
+
+        if (normalize_device_id((string) ($device['device_id'] ?? '')) === $normalizedId) {
+            $removed = true;
+            continue;
+        }
+
+        $filteredDevices[] = $device;
+    }
+
+    if (!$removed) {
+        return ['ok' => false, 'message' => 'This device could not be found to delete.'];
+    }
+
+    write_devices($filteredDevices);
+
+    return ['ok' => true, 'message' => 'Device removed successfully.'];
+}
+
+function validate_registered_device(string $deviceId): array
+{
+    $normalizedId = normalize_device_id((string) $deviceId);
+
+    if ($normalizedId === '') {
+        return ['ok' => true, 'device' => null];
+    }
+
+    foreach (read_devices() as $device) {
+        if (!is_array($device)) {
+            continue;
+        }
+
+        if (normalize_device_id((string) ($device['device_id'] ?? '')) !== $normalizedId) {
+            continue;
+        }
+
+        return ['ok' => true, 'device' => $device];
+    }
+
+    return ['ok' => false, 'message' => 'This phone is not registered for attendance. Please register the device with admin first.'];
+}
+
 function validate_clock_in_geofence(?array $clockInLocation): array
 {
     $settings = read_geofence_settings();
 
     if (!(bool) ($settings['enabled'] ?? false)) {
         return ['ok' => true, 'location' => null];
-    }
-
-    $targetLatitude = isset($settings['latitude']) && is_numeric($settings['latitude']) ? (float) $settings['latitude'] : null;
-    $targetLongitude = isset($settings['longitude']) && is_numeric($settings['longitude']) ? (float) $settings['longitude'] : null;
-    $radiusMeters = (int) ($settings['radius_meters'] ?? 150);
-
-    if ($targetLatitude === null || $targetLongitude === null) {
-        return ['ok' => false, 'message' => 'Clock-in location is not configured. Contact admin.'];
     }
 
     if (!is_array($clockInLocation)) {
@@ -514,25 +867,71 @@ function validate_clock_in_geofence(?array $clockInLocation): array
         return ['ok' => false, 'message' => 'Clock-in location is invalid. Please refresh your location and try again.'];
     }
 
-    $distanceMeters = geo_distance_meters($sourceLatitude, $sourceLongitude, $targetLatitude, $targetLongitude);
+    $allowedLocations = is_array($settings['locations'] ?? null) && $settings['locations'] !== []
+        ? $settings['locations']
+        : [[
+            'name' => 'Primary Location',
+            'latitude' => $settings['latitude'] ?? null,
+            'longitude' => $settings['longitude'] ?? null,
+            'radius_meters' => $settings['radius_meters'] ?? 150,
+        ]];
 
-    if ($distanceMeters > $radiusMeters) {
+    $closestDistance = null;
+    $matchedLocation = null;
+
+    foreach ($allowedLocations as $allowedLocation) {
+        if (!is_array($allowedLocation)) {
+            continue;
+        }
+
+        $targetLatitude = isset($allowedLocation['latitude']) && is_numeric($allowedLocation['latitude']) ? (float) $allowedLocation['latitude'] : null;
+        $targetLongitude = isset($allowedLocation['longitude']) && is_numeric($allowedLocation['longitude']) ? (float) $allowedLocation['longitude'] : null;
+        $radiusMeters = isset($allowedLocation['radius_meters']) && is_numeric($allowedLocation['radius_meters'])
+            ? (int) round((float) $allowedLocation['radius_meters'])
+            : 150;
+
+        if ($targetLatitude === null || $targetLongitude === null) {
+            continue;
+        }
+
+        $distanceMeters = geo_distance_meters($sourceLatitude, $sourceLongitude, $targetLatitude, $targetLongitude);
+
+        if ($closestDistance === null || $distanceMeters < $closestDistance) {
+            $closestDistance = $distanceMeters;
+        }
+
+        if ($distanceMeters <= $radiusMeters) {
+            $matchedLocation = [
+                'name' => (string) ($allowedLocation['name'] ?? 'Location'),
+                'latitude' => $targetLatitude,
+                'longitude' => $targetLongitude,
+                'radius_meters' => $radiusMeters,
+                'distance_meters' => (int) round($distanceMeters),
+            ];
+            break;
+        }
+    }
+
+    if ($matchedLocation !== null) {
         return [
-            'ok' => false,
-            'message' => 'You are outside the allowed clock-in area. Move closer and try again.',
-            'distance_meters' => (int) round($distanceMeters),
-            'radius_meters' => $radiusMeters,
+            'ok' => true,
+            'location' => [
+                'latitude' => $sourceLatitude,
+                'longitude' => $sourceLongitude,
+                'accuracy_meters' => $accuracyMeters,
+                'distance_meters' => (int) round((float) $matchedLocation['distance_meters']),
+                'reference_latitude' => $matchedLocation['latitude'],
+                'reference_longitude' => $matchedLocation['longitude'],
+                'allowed_location' => $matchedLocation['name'],
+            ],
         ];
     }
 
     return [
-        'ok' => true,
-        'location' => [
-            'latitude' => $sourceLatitude,
-            'longitude' => $sourceLongitude,
-            'accuracy_meters' => $accuracyMeters,
-            'distance_meters' => $distanceMeters,
-        ],
+        'ok' => false,
+        'message' => 'You are outside the allowed clock-in area. Move closer to an approved location and try again.',
+        'distance_meters' => $closestDistance === null ? 0 : (int) round($closestDistance),
+        'radius_meters' => 0,
     ];
 }
 
@@ -1685,7 +2084,7 @@ function format_minutes_duration(int $minutes): string
     return $hours . ' hour' . ($hours === 1 ? '' : 's') . ' ' . $remainingMinutes . ' minute' . ($remainingMinutes === 1 ? '' : 's');
 }
 
-function record_attendance_action(string $employeeNumber, string $action, string $photoData = '', ?DateTimeInterface $recordedAt = null, ?array $clockInLocation = null): array
+function record_attendance_action(string $employeeNumber, string $action, string $photoData = '', ?DateTimeInterface $recordedAt = null, ?array $clockInLocation = null, ?string $deviceId = null): array
 {
     $employeeNumber = normalize_employee_number($employeeNumber);
 
@@ -1708,6 +2107,13 @@ function record_attendance_action(string $employeeNumber, string $action, string
     $departmentId = $employee['department_id'] ?? '';
     $departmentName = $employee['department_name'] ?? 'Unassigned';
     $recordedAt ??= new DateTimeImmutable('now');
+
+    if ($action === 'clock_in') {
+        $deviceValidation = validate_registered_device((string) ($deviceId ?? ''));
+        if (!$deviceValidation['ok']) {
+            return ['ok' => false, 'message' => (string) ($deviceValidation['message'] ?? 'This phone is not registered for attendance.')];
+        }
+    }
     $date = $recordedAt->format('Y-m-d');
     $time = $recordedAt->format('H:i:s');
 
@@ -1845,9 +2251,9 @@ function record_attendance_action(string $employeeNumber, string $action, string
     return $result;
 }
 
-function employee_attendance_action(string $employeeNumber, string $action, string $photoData = '', ?array $clockInLocation = null): array
+function employee_attendance_action(string $employeeNumber, string $action, string $photoData = '', ?array $clockInLocation = null, ?string $deviceId = null): array
 {
-    return record_attendance_action($employeeNumber, $action, $photoData, null, $clockInLocation);
+    return record_attendance_action($employeeNumber, $action, $photoData, null, $clockInLocation, $deviceId);
 }
 
 function sync_offline_attendance(array $items): array
@@ -1924,7 +2330,8 @@ function sync_offline_attendance(array $items): array
             (string) ($item['action'] ?? ''),
             (string) ($item['clock_in_photo'] ?? ''),
             $recordedAt,
-            is_array($item['clock_in_location'] ?? null) ? $item['clock_in_location'] : null
+            is_array($item['clock_in_location'] ?? null) ? $item['clock_in_location'] : null,
+            (string) ($item['device_id'] ?? '')
         );
 
         $results[] = [

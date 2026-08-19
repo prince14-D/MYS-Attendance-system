@@ -66,12 +66,42 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $_POST['position'] ?? ''
         );
     } elseif ($adminAction === 'update_geofence') {
-        $registrationResult = update_geofence_settings(
-            isset($_POST['geofence_enabled']) ? '1' : '0',
-            $_POST['geofence_latitude'] ?? '',
-            $_POST['geofence_longitude'] ?? '',
-            $_POST['geofence_radius_meters'] ?? ''
+        $geofenceLocations = [];
+        $locationsRaw = trim((string) ($_POST['geofence_locations'] ?? ''));
+
+        if ($locationsRaw !== '') {
+            $decodedLocations = json_decode($locationsRaw, true);
+            if (is_array($decodedLocations)) {
+                $geofenceLocations = $decodedLocations;
+            } else {
+                $registrationResult = ['ok' => false, 'message' => 'Multiple location data must be valid JSON.'];
+            }
+        }
+
+        if ($registrationResult === null) {
+            $registrationResult = update_geofence_settings(
+                isset($_POST['geofence_enabled']) ? '1' : '0',
+                $_POST['geofence_latitude'] ?? '',
+                $_POST['geofence_longitude'] ?? '',
+                $_POST['geofence_radius_meters'] ?? '',
+                $geofenceLocations
+            );
+        }
+    } elseif ($adminAction === 'register_device') {
+        $registrationResult = register_device(
+            $_POST['device_id'] ?? '',
+            $_POST['device_name'] ?? '',
+            $_POST['device_location_name'] ?? ''
         );
+    } elseif ($adminAction === 'update_device') {
+        $registrationResult = update_device(
+            $_POST['original_device_id'] ?? '',
+            $_POST['device_id'] ?? '',
+            $_POST['device_name'] ?? '',
+            $_POST['device_location_name'] ?? ''
+        );
+    } elseif ($adminAction === 'delete_device') {
+        $registrationResult = delete_device($_POST['device_id'] ?? '');
     } elseif ($adminAction === 'restore_backup') {
         $registrationResult = restore_from_backup_upload($_FILES['backup_file'] ?? []);
     } elseif ($adminAction === 'upload_employee_document') {
@@ -93,6 +123,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     } elseif ($adminAction === 'review_excuse') {
         require_roles(['admin', 'hr', 'supervisor']);
         $registrationResult = review_excuse($_POST['excuse_id'] ?? '', current_username(), $_POST['decision'] ?? '');
+    } elseif ($adminAction === 'issue_employee_letter') {
+        require_roles(['admin', 'hr', 'supervisor']);
+        $registrationResult = create_letter($_POST, current_username());
     }
 }
 
@@ -124,6 +157,7 @@ $allowedAdminPages = [
     'geofence',
     'monthly_report',
     'excuse_form',
+    'employee_letters',
     'tally_sheet',
     'employee_profiles',
     'user_management',
@@ -145,6 +179,7 @@ $adminPageLinks = [
     'geofence' => ['label' => 'Setup Geofence', 'href' => 'geofence.php'],
     'monthly_report' => ['label' => 'Monthly Report', 'href' => 'monthly_report.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
     'excuse_form' => ['label' => 'Employee Excuse Form', 'href' => 'excuse_form.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
+    'employee_letters' => ['label' => 'Employee Letters', 'href' => 'employee_letters.php'],
     'tally_sheet' => ['label' => 'Attendance Tally Sheet', 'href' => 'tally_sheet.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
     'employee_profiles' => ['label' => 'Employee Profiles', 'href' => 'employee_profiles.php'],
     'user_management' => ['label' => 'User Management', 'href' => 'user_management.php'],
@@ -155,6 +190,7 @@ $pageRoles = [
     'register_employee' => ['admin'], 'employees' => ['admin', 'hr'], 'attendance_log' => ['admin', 'supervisor'],
     'create_department' => ['admin'], 'backup_restore' => ['admin'], 'geofence' => ['admin'],
     'monthly_report' => ['admin', 'hr', 'viewer'], 'excuse_form' => ['admin', 'hr', 'supervisor'],
+    'employee_letters' => ['admin', 'hr', 'supervisor'],
     'tally_sheet' => ['admin', 'supervisor', 'viewer'], 'employee_profiles' => ['admin', 'hr'], 'user_management' => ['admin'],
 ];
 require_roles($pageRoles[$activePage] ?? ['admin']);

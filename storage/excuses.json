@@ -41,5 +41,27 @@
         "hr_approved": "No",
         "created_at": "2026-08-17 23:52:31",
         "reviewed_at": "2026-08-17 23:56:49"
+    },
+    {
+        "excuse_id": "EXC-20260818092317-d4a4b6",
+        "employee_number": "069937",
+        "employee_name": "WILFRED S. K. PAYNE",
+        "position": "Administrative Assistant",
+        "department_id": "am-tvet",
+        "department_name": "AM-TVET",
+        "absence_start": "2026-08-19",
+        "absence_end": "2026-08-21",
+        "absence_time": "4pm",
+        "reason": "Medical Appointment",
+        "other_reason": "",
+        "supporting_documents": [
+            "Other"
+        ],
+        "supervisor_name": "jsds",
+        "supervisor_decision": "Approved",
+        "supervisor_comments": "we",
+        "hr_reviewed_by": "ewew",
+        "hr_approved": "Yes",
+        "created_at": "2026-08-18 09:23:17"
     }
 ]

@@ -19,10 +19,25 @@ foreach ($employeeDirectory as $employee) {
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    $clockInLocation = null;
+
+    if (isset($_POST['clock_in_location']) && is_array($_POST['clock_in_location'])) {
+        $clockInLocation = $_POST['clock_in_location'];
+    } elseif (
+        isset($_POST['clock_in_latitude']) || isset($_POST['clock_in_longitude']) || isset($_POST['clock_in_accuracy_m'])
+    ) {
+        $clockInLocation = [
+            'latitude' => $_POST['clock_in_latitude'] ?? null,
+            'longitude' => $_POST['clock_in_longitude'] ?? null,
+            'accuracy_meters' => $_POST['clock_in_accuracy_m'] ?? null,
+        ];
+    }
+
     $result = employee_attendance_action(
         $_POST['employee_number'] ?? '',
         $_POST['action'] ?? '',
-        $_POST['clock_in_photo'] ?? ''
+        $_POST['clock_in_photo'] ?? '',
+        is_array($clockInLocation) ? $clockInLocation : null
     );
 }
 ?>
@@ -118,6 +133,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                             <input class="form-control" id="employee_number" name="employee_number" type="text" inputmode="text" placeholder="Example: EMP001" required autofocus>
                             <p class="muted" id="actionHint">Enter your employee number to continue.</p>
                             <input id="clockInPhoto" name="clock_in_photo" type="hidden">
+                            <input id="deviceIdField" name="device_id" type="hidden">
+                            <input id="deviceNameField" name="device_name" type="hidden">
+                            <input id="clockInLatitude" name="clock_in_location[latitude]" type="hidden">
+                            <input id="clockInLongitude" name="clock_in_location[longitude]" type="hidden">
+                            <input id="clockInAccuracy" name="clock_in_location[accuracy_meters]" type="hidden">
+
+                            <div class="location-card mb-3" id="locationCard" hidden>
+                                <div class="camera-header">
+                                    <div>
+                                        <strong>Location check</strong>
+                                        <span>We need your current GPS position before clocking in.</span>
+                                    </div>
+                                </div>
+                                <button class="button secondary full-button" type="button" id="useCurrentLocationButton">Use My Location</button>
+                                <p class="camera-message" id="locationMessage" role="status"></p>
+                            </div>
 
                             <div class="camera-card" id="cameraCard" hidden>
                                 <div class="camera-header">
@@ -157,6 +188,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         const photoCanvas = document.getElementById('photoCanvas');
         const photoPreview = document.getElementById('photoPreview');
         const photoInput = document.getElementById('clockInPhoto');
+        const clockInLatitudeInput = document.getElementById('clockInLatitude');
+        const clockInLongitudeInput = document.getElementById('clockInLongitude');
+        const clockInAccuracyInput = document.getElementById('clockInAccuracy');
+        const locationCard = document.getElementById('locationCard');
+        const useCurrentLocationButton = document.getElementById('useCurrentLocationButton');
+        const locationMessage = document.getElementById('locationMessage');
         const capturePhoto = document.getElementById('capturePhoto');
         const retakePhoto = document.getElementById('retakePhoto');
         const cameraMessage = document.getElementById('cameraMessage');
@@ -178,6 +215,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         const geofenceSettings = <?= json_encode($geofencePublicSettings, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
         const employeeClockStatusByNumber = <?= json_encode($employeeClockStatusDirectory, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
         const offlineQueueKey = 'mys_attendance_offline_queue';
+        const deviceIdKey = 'mys_attendance_device_id';
+        const deviceNameKey = 'mys_attendance_device_name';
         const onlineRequestTimeoutMs = 12000;
         let stream = null;
         let pendingInstallPrompt = null;
@@ -310,6 +349,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         refreshClock();
         setInterval(refreshClock, 1000);
 
+        const deviceId = getOrCreateDeviceId();
+        if (deviceIdField) {
+            deviceIdField.value = deviceId;
+        }
+
+        if (deviceNameField) {
+            deviceNameField.value = getDeviceName();
+        }
+
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').then((registration) => {
                 if (registration.waiting) {
@@ -368,6 +416,31 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             pendingInstallPrompt = null;
             installAppCard.hidden = true;
         });
+
+        function getOrCreateDeviceId() {
+            const existing = localStorage.getItem(deviceIdKey) || '';
+            if (existing && /^[-a-z0-9]{6,64}$/.test(existing)) {
+                return existing;
+            }
+
+            const rawId = (crypto && crypto.randomUUID ? crypto.randomUUID() : `phone-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`)
+                .toLowerCase()
+                .replace(/[^a-z0-9-]+/g, '-');
+            const deviceId = String(rawId).replace(/^-+|-+$/g, '').slice(0, 64);
+            localStorage.setItem(deviceIdKey, deviceId);
+            return deviceId;
+        }
+
+        function getDeviceName() {
+            const existing = localStorage.getItem(deviceNameKey) || '';
+            if (existing) {
+                return existing;
+            }
+
+            const deviceName = `Phone ${getOrCreateDeviceId().slice(0, 8).toUpperCase()}`;
+            localStorage.setItem(deviceNameKey, deviceName);
+            return deviceName;
+        }
 
         function readQueue() {
             try {
@@ -518,9 +591,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
 
         function geofenceEnabled() {
-            return Boolean(geofenceSettings?.enabled)
-                && Number.isFinite(Number(geofenceSettings?.latitude))
-                && Number.isFinite(Number(geofenceSettings?.longitude));
+            if (!Boolean(geofenceSettings?.enabled)) {
+                return false;
+            }
+
+            const locations = Array.isArray(geofenceSettings?.locations) && geofenceSettings.locations.length > 0
+                ? geofenceSettings.locations
+                : [{ latitude: geofenceSettings?.latitude, longitude: geofenceSettings?.longitude, radius_meters: geofenceSettings?.radius_meters || 150 }];
+
+            return locations.some((location) => Number.isFinite(Number(location?.latitude)) && Number.isFinite(Number(location?.longitude)));
         }
 
         function geoDistanceMeters(fromLat, fromLon, toLat, toLon) {
@@ -544,24 +623,48 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
             const sourceLatitude = Number(clockInLocation?.latitude);
             const sourceLongitude = Number(clockInLocation?.longitude);
-            const targetLatitude = Number(geofenceSettings.latitude);
-            const targetLongitude = Number(geofenceSettings.longitude);
-            const radiusMeters = Math.max(20, Number(geofenceSettings.radius_meters || 150));
 
             if (!Number.isFinite(sourceLatitude) || !Number.isFinite(sourceLongitude)) {
                 return { ok: false, message: 'Location is required before clocking in.' };
             }
 
-            const distanceMeters = geoDistanceMeters(sourceLatitude, sourceLongitude, targetLatitude, targetLongitude);
+            const locations = Array.isArray(geofenceSettings?.locations) && geofenceSettings.locations.length > 0
+                ? geofenceSettings.locations
+                : [{ latitude: geofenceSettings?.latitude, longitude: geofenceSettings?.longitude, radius_meters: geofenceSettings?.radius_meters || 150 }];
 
-            if (distanceMeters > radiusMeters) {
-                return {
-                    ok: false,
-                    message: `You are outside the allowed clock-in area (${Math.round(distanceMeters)}m away).`
-                };
+            let closestDistance = Number.POSITIVE_INFINITY;
+            let matchedLocation = null;
+
+            for (const location of locations) {
+                const targetLatitude = Number(location?.latitude);
+                const targetLongitude = Number(location?.longitude);
+                const radiusMeters = Math.max(20, Number(location?.radius_meters || 150));
+
+                if (!Number.isFinite(targetLatitude) || !Number.isFinite(targetLongitude)) {
+                    continue;
+                }
+
+                const distanceMeters = geoDistanceMeters(sourceLatitude, sourceLongitude, targetLatitude, targetLongitude);
+                closestDistance = Math.min(closestDistance, distanceMeters);
+
+                if (distanceMeters <= radiusMeters) {
+                    matchedLocation = {
+                        name: location?.name || 'Approved location',
+                        distanceMeters,
+                        radiusMeters
+                    };
+                    break;
+                }
             }
 
-            return { ok: true };
+            if (matchedLocation) {
+                return { ok: true, location: matchedLocation };
+            }
+
+            return {
+                ok: false,
+                message: `You are outside the allowed clock-in area (${Math.round(closestDistance)}m away).`
+            };
         }
 
         function requestCurrentLocation() {
@@ -573,12 +676,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
-                        resolve({
+                        const location = {
                             latitude: position.coords.latitude,
                             longitude: position.coords.longitude,
                             accuracy_meters: position.coords.accuracy,
                             captured_at: new Date().toISOString()
-                        });
+                        };
+
+                        if (clockInLatitudeInput) {
+                            clockInLatitudeInput.value = String(location.latitude);
+                        }
+                        if (clockInLongitudeInput) {
+                            clockInLongitudeInput.value = String(location.longitude);
+                        }
+                        if (clockInAccuracyInput) {
+                            clockInAccuracyInput.value = String(location.accuracy_meters ?? '');
+                        }
+
+                        if (locationMessage) {
+                            locationMessage.textContent = `Location captured: ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}.`;
+                        }
+
+                        resolve(location);
                     },
                     () => {
                         reject(new Error('Unable to get your current location. Please allow location access.'));
@@ -607,6 +726,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
 
         async function submitOnlineRecord(action, employeeNumber, clockInLocation = null) {
+            const deviceId = getOrCreateDeviceId();
+            const deviceName = getDeviceName();
             const abortController = new AbortController();
             const timeoutId = setTimeout(() => abortController.abort(), onlineRequestTimeoutMs);
 
@@ -617,6 +738,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     body: JSON.stringify({
                         employee_number: employeeNumber,
                         action,
+                        device_id: deviceId,
+                        device_name: deviceName,
                         clock_in_photo: action === 'clock_in' ? photoInput.value : '',
                         clock_in_location: action === 'clock_in' ? clockInLocation : null
                     }),
@@ -664,6 +787,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         function saveOfflineRecord(action, clockInLocation = null) {
             const employeeNumber = employeeInput.value.trim().toUpperCase();
             const employee = employeesByNumber[employeeNumber];
+            const deviceId = getOrCreateDeviceId();
 
             if (!employee) {
                 cameraMessage.textContent = 'This employee number is not registered on this device.';
@@ -698,6 +822,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 employee_number: employeeNumber,
                 employee_name: employee.employee_name,
                 action,
+                device_id: deviceId,
+                device_name: getDeviceName(),
                 clock_in_photo: action === 'clock_in' ? photoInput.value : '',
                 clock_in_location: action === 'clock_in' ? clockInLocation : null,
                 recorded_at: new Date().toISOString()
@@ -860,6 +986,21 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         });
 
         retakePhoto?.addEventListener('click', showCameraStream);
+
+        useCurrentLocationButton?.addEventListener('click', async () => {
+            if (!geofenceEnabled()) {
+                locationMessage.textContent = 'Geofence is not enabled yet. Turn it on in the admin geofence settings.';
+                return;
+            }
+
+            try {
+                locationCard.hidden = false;
+                locationMessage.textContent = 'Getting your current location...';
+                await requestCurrentLocation();
+            } catch (error) {
+                locationMessage.textContent = error.message || 'Unable to access location. Please allow GPS access.';
+            }
+        });
 
         attendanceForm?.addEventListener('submit', async (event) => {
             event.preventDefault();

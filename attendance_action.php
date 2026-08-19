@@ -23,7 +23,8 @@ $result = employee_attendance_action(
     (string) ($payload['employee_number'] ?? ''),
     (string) ($payload['action'] ?? ''),
     (string) ($payload['clock_in_photo'] ?? ''),
-    is_array($payload['clock_in_location'] ?? null) ? $payload['clock_in_location'] : null
+    is_array($payload['clock_in_location'] ?? null) ? $payload['clock_in_location'] : null,
+    (string) ($payload['device_id'] ?? '')
 );
 
 echo json_encode($result);
