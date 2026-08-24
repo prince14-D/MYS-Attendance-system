@@ -8,6 +8,80 @@ $pageTitle = 'Attendance Log';
 $extraHeadHtml = '<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">';
 $autoPrint = isset($_GET['print']) && $_GET['print'] === '1';
 
+$selectedEmployeeType = normalize_employee_type_filter((string) ($_GET['employee_type'] ?? ''));
+$selectedEmployeeNumber = normalize_employee_number((string) ($_GET['employee_number'] ?? ''));
+$selectedStatus = normalize_attendance_status_filter((string) ($_GET['status'] ?? 'all'));
+
+$employeeOptions = [];
+
+foreach ($employees as $employee) {
+	$employeeNumber = normalize_employee_number((string) ($employee['employee_number'] ?? ''));
+
+	if ($employeeNumber === '') {
+		continue;
+	}
+
+	$employeeOptions[$employeeNumber] = [
+		'employee_number' => $employeeNumber,
+		'employee_name' => trim((string) ($employee['employee_name'] ?? '')),
+		'employee_type' => (string) ($employee['employee_type'] ?? 'Employee'),
+		'department_name' => trim((string) ($employee['department_name'] ?? 'Unassigned')),
+	];
+}
+
+ksort($employeeOptions);
+
+if ($selectedEmployeeNumber !== '' && !isset($employeeOptions[$selectedEmployeeNumber])) {
+	$selectedEmployeeNumber = '';
+}
+
+$records = filter_attendance_records($records, $selectedEmployeeType, $selectedEmployeeNumber, $selectedStatus);
+
+$completeRecords = count(array_filter($records, static fn (array $record): bool => ($record['status'] ?? '') === 'Complete'));
+$incompleteRecords = count($records) - $completeRecords;
+$clockedInRecords = count(array_filter($records, static fn (array $record): bool => ($record['clock_in'] ?? '') !== ''));
+$totalWorkedMinutes = 0;
+$completeWorkedMinutes = 0;
+
+foreach ($records as $record) {
+	$worked = worked_hours($record);
+
+	if ($worked === '') {
+		continue;
+	}
+
+	[$hours, $minutes] = array_map('intval', explode(':', $worked));
+	$minutesWorked = ($hours * 60) + $minutes;
+	$totalWorkedMinutes += $minutesWorked;
+
+	if (($record['status'] ?? '') === 'Complete') {
+		$completeWorkedMinutes += $minutesWorked;
+	}
+}
+
+$averageWorkedMinutes = $completeRecords > 0 ? (int) floor($completeWorkedMinutes / $completeRecords) : 0;
+
+$subsetParts = [];
+
+if ($selectedEmployeeType !== '') {
+	$subsetParts[] = $selectedEmployeeType;
+}
+
+if ($selectedEmployeeNumber !== '') {
+	$selectedEmployeeData = $employeeOptions[$selectedEmployeeNumber] ?? null;
+	$subsetParts[] = $selectedEmployeeData !== null
+		? ((string) ($selectedEmployeeData['employee_name'] ?: $selectedEmployeeNumber))
+		: $selectedEmployeeNumber;
+}
+
+if ($selectedStatus !== 'all') {
+	$subsetParts[] = ucfirst($selectedStatus);
+}
+
+if ($subsetParts !== []) {
+	$activeFilterLabel .= ' | ' . implode(' | ', $subsetParts);
+}
+
 require_once __DIR__ . '/admin_shell_start.php';
 ?>
 <div class="dashboard-hero panel">
@@ -58,7 +132,7 @@ require_once __DIR__ . '/admin_shell_start.php';
 			<label class="form-label" for="refresh_date">Date</label>
 			<input class="form-control" id="refresh_date" name="date" type="date" value="<?= h($selectedDate) ?>" required>
 		</div>
-		<div class="col-12 col-md-5 col-lg-4">
+		<div class="col-12 col-md-4 col-lg-3">
 			<label class="form-label" for="refresh_department">Department</label>
 			<select class="form-select" id="refresh_department" name="department" <?= $isDepartmentScoped ? 'disabled' : '' ?>>
 				<option value="">All Departments</option>
@@ -69,7 +143,40 @@ require_once __DIR__ . '/admin_shell_start.php';
 				<?php endforeach; ?>
 			</select>
 		</div>
-		<div class="col-12 col-md-3 col-lg-5 d-flex flex-wrap gap-2">
+		<div class="col-12 col-md-4 col-lg-3">
+			<label class="form-label" for="refresh_employee_type">Employee Type</label>
+			<select class="form-select" id="refresh_employee_type" name="employee_type">
+				<option value="">All Types</option>
+				<option value="Employee" <?= $selectedEmployeeType === 'Employee' ? 'selected' : '' ?>>Employee</option>
+				<option value="Contractor" <?= $selectedEmployeeType === 'Contractor' ? 'selected' : '' ?>>Contractor</option>
+				<option value="Volunteer" <?= $selectedEmployeeType === 'Volunteer' ? 'selected' : '' ?>>Volunteer</option>
+			</select>
+		</div>
+		<div class="col-12 col-md-6 col-lg-4">
+			<label class="form-label" for="refresh_employee_number">Employee</label>
+			<select class="form-select" id="refresh_employee_number" name="employee_number">
+				<option value="">All Employees</option>
+				<?php foreach ($employeeOptions as $employeeOption): ?>
+					<?php
+						$employeeLabel = ($employeeOption['employee_name'] !== '' ? $employeeOption['employee_name'] : $employeeOption['employee_number'])
+							. ' (' . $employeeOption['employee_number'] . ')'
+							. ' - ' . ($employeeOption['employee_type'] !== '' ? $employeeOption['employee_type'] : 'Employee');
+					?>
+					<option value="<?= h($employeeOption['employee_number']) ?>" <?= $selectedEmployeeNumber === $employeeOption['employee_number'] ? 'selected' : '' ?>>
+						<?= h($employeeLabel) ?>
+					</option>
+				<?php endforeach; ?>
+			</select>
+		</div>
+		<div class="col-12 col-md-3 col-lg-2">
+			<label class="form-label" for="refresh_status">Status</label>
+			<select class="form-select" id="refresh_status" name="status">
+				<option value="all" <?= $selectedStatus === 'all' ? 'selected' : '' ?>>All</option>
+				<option value="complete" <?= $selectedStatus === 'complete' ? 'selected' : '' ?>>Complete</option>
+				<option value="incomplete" <?= $selectedStatus === 'incomplete' ? 'selected' : '' ?>>Incomplete</option>
+			</select>
+		</div>
+		<div class="col-12 col-lg-12 d-flex flex-wrap gap-2">
 			<button class="button secondary" type="submit">Refresh Records</button>
 			<button class="button" type="submit" name="print" value="1">Refresh + Print</button>
 		</div>
@@ -96,9 +203,9 @@ require_once __DIR__ . '/admin_shell_start.php';
 			</div>
 		</div>
 		<div class="export-links">
-			<a class="link-button" href="export.php?format=csv&date=<?= h(urlencode($selectedDate)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">CSV</a>
-			<a class="link-button" href="export.php?format=xls&date=<?= h(urlencode($selectedDate)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">Excel</a>
-			<a class="link-button" href="export.php?format=pdf&date=<?= h(urlencode($selectedDate)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">PDF</a>
+			<a class="link-button" href="export.php?format=csv&date=<?= h(urlencode($selectedDate)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>&employee_type=<?= h(urlencode($selectedEmployeeType)) ?>&employee_number=<?= h(urlencode($selectedEmployeeNumber)) ?>&status=<?= h(urlencode($selectedStatus)) ?>">CSV</a>
+			<a class="link-button" href="export.php?format=xls&date=<?= h(urlencode($selectedDate)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>&employee_type=<?= h(urlencode($selectedEmployeeType)) ?>&employee_number=<?= h(urlencode($selectedEmployeeNumber)) ?>&status=<?= h(urlencode($selectedStatus)) ?>">Excel</a>
+			<a class="link-button" href="export.php?format=pdf&date=<?= h(urlencode($selectedDate)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>&employee_type=<?= h(urlencode($selectedEmployeeType)) ?>&employee_number=<?= h(urlencode($selectedEmployeeNumber)) ?>&status=<?= h(urlencode($selectedStatus)) ?>">PDF</a>
 		</div>
 	</div>
 
