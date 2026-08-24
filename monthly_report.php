@@ -10,6 +10,131 @@ $extraHeadHtml = <<<'HTML'
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 HTML;
 
+$selectedEmployeeType = normalize_employee_type_filter((string) ($_GET['employee_type'] ?? ''));
+$selectedEmployeeNumber = normalize_employee_number((string) ($_GET['employee_number'] ?? ''));
+$selectedStatus = normalize_attendance_status_filter((string) ($_GET['status'] ?? 'all'));
+
+$employeeOptions = [];
+
+foreach ($employees as $employee) {
+	$employeeNumber = normalize_employee_number((string) ($employee['employee_number'] ?? ''));
+
+	if ($employeeNumber === '') {
+		continue;
+	}
+
+	$employeeOptions[$employeeNumber] = [
+		'employee_number' => $employeeNumber,
+		'employee_name' => trim((string) ($employee['employee_name'] ?? '')),
+		'employee_type' => (string) ($employee['employee_type'] ?? 'Employee'),
+		'department_name' => trim((string) ($employee['department_name'] ?? 'Unassigned')),
+	];
+}
+
+ksort($employeeOptions);
+
+if ($selectedEmployeeNumber !== '' && !isset($employeeOptions[$selectedEmployeeNumber])) {
+	$selectedEmployeeNumber = '';
+}
+
+$filteredMonthlyRecords = [];
+
+foreach ($monthlyRecords as $day => $dayRecords) {
+	$filteredMonthlyRecords[$day] = filter_attendance_records($dayRecords, $selectedEmployeeType, $selectedEmployeeNumber, $selectedStatus);
+}
+
+$monthlyRecords = $filteredMonthlyRecords;
+$monthlyReportDays = [];
+$monthlyTotals = [
+	'records' => 0,
+	'complete' => 0,
+	'incomplete' => 0,
+	'late' => 0,
+	'worked_minutes' => 0,
+	'excuses' => count($monthlyExcuses),
+];
+
+$monthStart = DateTimeImmutable::createFromFormat('Y-m-d', $selectedMonth . '-01');
+$daysInMonth = $monthStart ? (int) $monthStart->format('t') : 0;
+
+for ($day = 1; $day <= $daysInMonth; $day++) {
+	$date = sprintf('%s-%02d', $selectedMonth, $day);
+	$dayRecords = $monthlyRecords[$date] ?? [];
+	$completeCount = 0;
+	$lateCount = 0;
+	$workedMinutes = 0;
+
+	foreach ($dayRecords as $record) {
+		$monthlyTotals['records']++;
+
+		if (($record['status'] ?? '') === 'Complete') {
+			$completeCount++;
+			$monthlyTotals['complete']++;
+		} else {
+			$monthlyTotals['incomplete']++;
+		}
+
+		$flags = is_array($record['flags'] ?? null) ? $record['flags'] : [];
+
+		if (($flags['late'] ?? false) === true) {
+			$lateCount++;
+			$monthlyTotals['late']++;
+		}
+
+		$worked = worked_hours($record);
+
+		if ($worked !== '') {
+			[$hours, $minutes] = array_map('intval', explode(':', $worked));
+			$workedMinutes += ($hours * 60) + $minutes;
+			$monthlyTotals['worked_minutes'] += ($hours * 60) + $minutes;
+		}
+	}
+
+	$monthlyReportDays[] = [
+		'date' => $date,
+		'day_label' => date('j', strtotime($date)),
+		'weekday' => date('D', strtotime($date)),
+		'total' => count($dayRecords),
+		'complete' => $completeCount,
+		'incomplete' => max(0, count($dayRecords) - $completeCount),
+		'late' => $lateCount,
+		'worked_minutes' => $workedMinutes,
+	];
+}
+
+$monthlySummaryCards = [
+	['label' => 'Total Records', 'value' => (string) $monthlyTotals['records'], 'note' => 'All attendance entries in month'],
+	['label' => 'Complete', 'value' => (string) $monthlyTotals['complete'], 'note' => 'Finished shifts'],
+	['label' => 'Late Arrivals', 'value' => (string) $monthlyTotals['late'], 'note' => 'Clock-ins after shift start'],
+	['label' => 'Incomplete', 'value' => (string) $monthlyTotals['incomplete'], 'note' => 'Missing clock-out or clock-in'],
+	['label' => 'Excuses', 'value' => (string) $monthlyTotals['excuses'], 'note' => 'Employee excuse forms submitted'],
+];
+
+$monthlyMaxBar = max(1, ...array_map(static fn (array $item): int => max((int) $item['total'], (int) $item['complete'], (int) $item['late'], 1), $monthlyReportDays));
+$monthlyAverageWorked = $monthlyTotals['complete'] > 0 ? (int) floor($monthlyTotals['worked_minutes'] / $monthlyTotals['complete']) : 0;
+
+$monthlyScopeLabel = $activeFilterLabel;
+$scopeParts = [];
+
+if ($selectedEmployeeType !== '') {
+	$scopeParts[] = $selectedEmployeeType;
+}
+
+if ($selectedEmployeeNumber !== '') {
+	$selectedEmployeeData = $employeeOptions[$selectedEmployeeNumber] ?? null;
+	$scopeParts[] = $selectedEmployeeData !== null
+		? ((string) ($selectedEmployeeData['employee_name'] ?: $selectedEmployeeNumber))
+		: $selectedEmployeeNumber;
+}
+
+if ($selectedStatus !== 'all') {
+	$scopeParts[] = ucfirst($selectedStatus);
+}
+
+if ($scopeParts !== []) {
+	$monthlyScopeLabel .= ' | ' . implode(' | ', $scopeParts);
+}
+
 require_once __DIR__ . '/admin_shell_start.php';
 ?>
 <div class="dashboard-hero panel">
@@ -54,6 +179,7 @@ require_once __DIR__ . '/admin_shell_start.php';
 
 	<section class="admin-box analysis-box bootstrap-monthly-card">
 		<form method="get" class="monthly-report-form">
+			<input type="hidden" name="page" value="monthly_report">
 			<div>
 				<label for="month">Month</label>
 				<input class="form-control" id="month" name="month" type="month" value="<?= h($selectedMonth) ?>">
@@ -69,15 +195,48 @@ require_once __DIR__ . '/admin_shell_start.php';
 					<?php endforeach; ?>
 				</select>
 			</div>
+			<div>
+				<label for="month_employee_type">Employee Type</label>
+				<select class="form-select" id="month_employee_type" name="employee_type">
+					<option value="">All Types</option>
+					<option value="Employee" <?= $selectedEmployeeType === 'Employee' ? 'selected' : '' ?>>Employee</option>
+					<option value="Contractor" <?= $selectedEmployeeType === 'Contractor' ? 'selected' : '' ?>>Contractor</option>
+					<option value="Volunteer" <?= $selectedEmployeeType === 'Volunteer' ? 'selected' : '' ?>>Volunteer</option>
+				</select>
+			</div>
+			<div>
+				<label for="month_employee_number">Employee</label>
+				<select class="form-select" id="month_employee_number" name="employee_number">
+					<option value="">All Employees</option>
+					<?php foreach ($employeeOptions as $employeeOption): ?>
+						<?php
+							$employeeLabel = ($employeeOption['employee_name'] !== '' ? $employeeOption['employee_name'] : $employeeOption['employee_number'])
+								. ' (' . $employeeOption['employee_number'] . ')'
+								. ' - ' . ($employeeOption['employee_type'] !== '' ? $employeeOption['employee_type'] : 'Employee');
+						?>
+						<option value="<?= h($employeeOption['employee_number']) ?>" <?= $selectedEmployeeNumber === $employeeOption['employee_number'] ? 'selected' : '' ?>>
+							<?= h($employeeLabel) ?>
+						</option>
+					<?php endforeach; ?>
+				</select>
+			</div>
+			<div>
+				<label for="month_status">Status</label>
+				<select class="form-select" id="month_status" name="status">
+					<option value="all" <?= $selectedStatus === 'all' ? 'selected' : '' ?>>All</option>
+					<option value="complete" <?= $selectedStatus === 'complete' ? 'selected' : '' ?>>Complete</option>
+					<option value="incomplete" <?= $selectedStatus === 'incomplete' ? 'selected' : '' ?>>Incomplete</option>
+				</select>
+			</div>
 			<button class="btn btn-primary" type="submit">View Report</button>
 			<button class="btn btn-outline-primary" type="button" data-print-mode="monthly">Print Monthly</button>
 		</form>
 
 		<div class="export-links monthly-export-links">
 			<a class="btn btn-outline-primary" href="excuse_form.php?month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">Employee Excuse Form (<?= h((string) $monthlyTotals['excuses']) ?>)</a>
-			<a class="btn btn-outline-secondary" href="export.php?report=monthly&format=csv&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">CSV</a>
-			<a class="btn btn-outline-secondary" href="export.php?report=monthly&format=xls&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">Excel</a>
-			<a class="btn btn-outline-secondary" href="export.php?report=monthly&format=pdf&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>">PDF</a>
+			<a class="btn btn-outline-secondary" href="export.php?report=monthly&format=csv&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>&employee_type=<?= h(urlencode($selectedEmployeeType)) ?>&employee_number=<?= h(urlencode($selectedEmployeeNumber)) ?>&status=<?= h(urlencode($selectedStatus)) ?>">CSV</a>
+			<a class="btn btn-outline-secondary" href="export.php?report=monthly&format=xls&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>&employee_type=<?= h(urlencode($selectedEmployeeType)) ?>&employee_number=<?= h(urlencode($selectedEmployeeNumber)) ?>&status=<?= h(urlencode($selectedStatus)) ?>">Excel</a>
+			<a class="btn btn-outline-secondary" href="export.php?report=monthly&format=pdf&month=<?= h(urlencode($selectedMonth)) ?>&department=<?= h(urlencode($selectedDepartment)) ?>&employee_type=<?= h(urlencode($selectedEmployeeType)) ?>&employee_number=<?= h(urlencode($selectedEmployeeNumber)) ?>&status=<?= h(urlencode($selectedStatus)) ?>">PDF</a>
 		</div>
 
 		<div class="monthly-summary-grid" aria-label="Monthly attendance summary">
@@ -193,7 +352,7 @@ require_once __DIR__ . '/admin_shell_start.php';
 			<div>
 				<span class="eyebrow">Printable Monthly Record</span>
 				<h2><?= h(APP_NAME) ?></h2>
-				<p>Attendance summary for <?= h(date('F Y', strtotime($selectedMonth . '-01'))) ?> <?= $selectedDepartment !== '' ? '- ' . h($activeFilterLabel) : '' ?></p>
+				<p>Attendance summary for <?= h(date('F Y', strtotime($selectedMonth . '-01'))) ?> - <?= h($monthlyScopeLabel) ?></p>
 			</div>
 			<div class="print-report-meta">
 				<div>
@@ -202,7 +361,7 @@ require_once __DIR__ . '/admin_shell_start.php';
 				</div>
 				<div>
 					<span>Department</span>
-					<strong><?= h($activeFilterLabel) ?></strong>
+					<strong><?= h($monthlyScopeLabel) ?></strong>
 				</div>
 				<div>
 					<span>Total Records</span>
@@ -297,6 +456,9 @@ foreach ($monthlyReportDays as $day) {
 		const pieCanvas = document.getElementById('monthlyLivePieChart');
 		const monthInput = document.getElementById('month');
 		const departmentInput = document.getElementById('month_department');
+		const employeeTypeInput = document.getElementById('month_employee_type');
+		const employeeNumberInput = document.getElementById('month_employee_number');
+		const statusInput = document.getElementById('month_status');
 		const totalRecordsEl = document.getElementById('liveMonthlyTotalRecords');
 		const lateArrivalsEl = document.getElementById('liveMonthlyLateArrivals');
 		const updatedAtEl = document.getElementById('monthlyLiveUpdatedAt');
@@ -437,7 +599,10 @@ foreach ($monthlyReportDays as $day) {
 
 			const params = new URLSearchParams({
 				month: monthInput?.value || '<?= h($selectedMonth) ?>',
-				department: departmentInput?.value || ''
+				department: departmentInput?.value || '',
+				employee_type: employeeTypeInput?.value || '',
+				employee_number: employeeNumberInput?.value || '',
+				status: statusInput?.value || 'all'
 			});
 
 			try {

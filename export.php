@@ -11,6 +11,9 @@ $date = $_GET['date'] ?? date('Y-m-d');
 $month = $_GET['month'] ?? date('Y-m');
 $format = strtolower($_GET['format'] ?? 'csv');
 $departmentId = normalize_department_id($_GET['department'] ?? '');
+$employeeType = normalize_employee_type_filter((string) ($_GET['employee_type'] ?? ''));
+$employeeNumber = normalize_employee_number((string) ($_GET['employee_number'] ?? ''));
+$statusFilter = normalize_attendance_status_filter((string) ($_GET['status'] ?? 'all'));
 
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
     $date = date('Y-m-d');
@@ -28,6 +31,39 @@ if ($departmentId !== '' && $department === null) {
 
 $records = attendance_for_date($date, $departmentId);
 $departmentName = $department ? $department['department_name'] : 'All Departments';
+
+if (current_user_is_department_scoped()) {
+    $departmentId = current_user_department_id();
+    $records = attendance_for_date($date, $departmentId);
+    $scopeDepartment = $departmentId !== '' ? find_department($departmentId) : null;
+    $departmentName = $scopeDepartment ? $scopeDepartment['department_name'] : 'Assigned Department';
+}
+
+$records = filter_attendance_records($records, $employeeType, $employeeNumber, $statusFilter);
+
+$dailyScopeParts = [];
+
+if ($employeeType !== '') {
+    $dailyScopeParts[] = 'Type: ' . $employeeType;
+}
+
+if ($employeeNumber !== '') {
+    $employee = find_employee($employeeNumber);
+    $employeeLabel = $employee !== null
+        ? trim((string) ($employee['employee_name'] ?? ''))
+        : '';
+    $dailyScopeParts[] = $employeeLabel !== ''
+        ? 'Employee: ' . $employeeLabel . ' (' . $employeeNumber . ')'
+        : 'Employee: ' . $employeeNumber;
+}
+
+if ($statusFilter !== 'all') {
+    $dailyScopeParts[] = 'Status: ' . ucfirst($statusFilter);
+}
+
+if ($dailyScopeParts !== []) {
+    $departmentName .= ' | ' . implode(' | ', $dailyScopeParts);
+}
 
 function export_resolve_record(array $record, array $employees): array
 {
@@ -1074,12 +1110,44 @@ if ($report === 'excuse') {
 
 if ($report === 'monthly') {
     $monthRecords = attendance_for_month($month, $departmentId);
-    $rows = export_monthly_rows($monthRecords, $month, $departmentName);
+    $filteredMonthRecords = [];
+
+    foreach ($monthRecords as $day => $dayRecords) {
+        $filteredMonthRecords[$day] = filter_attendance_records($dayRecords, $employeeType, $employeeNumber, $statusFilter);
+    }
+
+    $monthScopeParts = [];
+
+    if ($employeeType !== '') {
+        $monthScopeParts[] = 'Type: ' . $employeeType;
+    }
+
+    if ($employeeNumber !== '') {
+        $employee = find_employee($employeeNumber);
+        $employeeLabel = $employee !== null
+            ? trim((string) ($employee['employee_name'] ?? ''))
+            : '';
+        $monthScopeParts[] = $employeeLabel !== ''
+            ? 'Employee: ' . $employeeLabel . ' (' . $employeeNumber . ')'
+            : 'Employee: ' . $employeeNumber;
+    }
+
+    if ($statusFilter !== 'all') {
+        $monthScopeParts[] = 'Status: ' . ucfirst($statusFilter);
+    }
+
+    $monthlyDepartmentName = $departmentName;
+
+    if ($monthScopeParts !== []) {
+        $monthlyDepartmentName .= ' | ' . implode(' | ', $monthScopeParts);
+    }
+
+    $rows = export_monthly_rows($filteredMonthRecords, $month, $monthlyDepartmentName);
 
     match ($format) {
         'csv' => download_monthly_csv($rows, $month),
         'xls', 'excel' => download_monthly_xls($rows, $month),
-        'pdf' => download_monthly_pdf($monthRecords, $month, $departmentName),
+        'pdf' => download_monthly_pdf($filteredMonthRecords, $month, $monthlyDepartmentName),
         default => download_monthly_csv($rows, $month),
     };
 }

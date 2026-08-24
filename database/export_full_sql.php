@@ -14,6 +14,32 @@ require __DIR__ . '/config.mysql.php';
 $pdo = mysql_connection();
 $tables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
 
+$preferredOrder = [
+    'departments',
+    'employees',
+    'devices',
+    'geofence_settings',
+    'geofence_locations',
+    'users',
+    'attendance',
+    'excuses',
+    'letters',
+    'employee_documents',
+];
+
+$orderMap = array_flip($preferredOrder);
+
+usort($tables, static function (string $left, string $right) use ($orderMap): int {
+    $leftRank = $orderMap[$left] ?? PHP_INT_MAX;
+    $rightRank = $orderMap[$right] ?? PHP_INT_MAX;
+
+    if ($leftRank !== $rightRank) {
+        return $leftRank <=> $rightRank;
+    }
+
+    return strcmp($left, $right);
+});
+
 fwrite(STDERR, 'Exporting ' . count($tables) . ' tables...' . PHP_EOL);
 
 echo "-- MYS Attendance System full export (schema + data)\n";

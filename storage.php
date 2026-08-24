@@ -1237,6 +1237,63 @@ function normalize_department_id(string $departmentId): string
     return strtolower(trim($departmentId));
 }
 
+function normalize_employee_type_filter(string $employeeType): string
+{
+    $employeeType = trim($employeeType);
+
+    return in_array($employeeType, ['Employee', 'Contractor', 'Volunteer'], true) ? $employeeType : '';
+}
+
+function normalize_attendance_status_filter(string $status): string
+{
+    $status = strtolower(trim($status));
+
+    return in_array($status, ['complete', 'incomplete'], true) ? $status : 'all';
+}
+
+function filter_attendance_records(array $records, string $employeeType = '', string $employeeNumber = '', string $statusFilter = 'all'): array
+{
+    $employeeType = normalize_employee_type_filter($employeeType);
+    $employeeNumber = normalize_employee_number($employeeNumber);
+    $statusFilter = normalize_attendance_status_filter($statusFilter);
+
+    if ($employeeType === '' && $employeeNumber === '' && $statusFilter === 'all') {
+        return $records;
+    }
+
+    $employees = read_employees();
+
+    return array_values(array_filter($records, static function (array $record) use ($employeeType, $employeeNumber, $statusFilter, $employees): bool {
+        $recordEmployeeNumber = normalize_employee_number((string) ($record['employee_number'] ?? ''));
+        $employee = $recordEmployeeNumber !== '' ? ($employees[$recordEmployeeNumber] ?? null) : null;
+        $recordEmployeeType = (string) ($employee['employee_type'] ?? 'Employee');
+
+        if ($employeeType !== '' && $recordEmployeeType !== $employeeType) {
+            return false;
+        }
+
+        if ($employeeNumber !== '' && $recordEmployeeNumber !== $employeeNumber) {
+            return false;
+        }
+
+        if ($statusFilter !== 'all') {
+            $status = strtolower(trim((string) ($record['status'] ?? '')));
+
+            if ($status === '') {
+                $clockIn = trim((string) ($record['clock_in'] ?? ''));
+                $clockOut = trim((string) ($record['clock_out'] ?? ''));
+                $status = ($clockIn !== '' && $clockOut !== '') ? 'complete' : 'incomplete';
+            }
+
+            if ($status !== $statusFilter) {
+                return false;
+            }
+        }
+
+        return true;
+    }));
+}
+
 function department_id_from_name(string $departmentName): string
 {
     $departmentId = strtolower(trim(preg_replace('/[^A-Za-z0-9]+/', '-', $departmentName) ?? ''));

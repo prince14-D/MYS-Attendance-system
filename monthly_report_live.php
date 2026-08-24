@@ -11,6 +11,9 @@ header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
 $selectedMonth = $_GET['month'] ?? date('Y-m');
 $selectedDepartment = normalize_department_id($_GET['department'] ?? '');
+$selectedEmployeeType = normalize_employee_type_filter((string) ($_GET['employee_type'] ?? ''));
+$selectedEmployeeNumber = normalize_employee_number((string) ($_GET['employee_number'] ?? ''));
+$selectedStatus = normalize_attendance_status_filter((string) ($_GET['status'] ?? 'all'));
 
 if (!preg_match('/^\d{4}-\d{2}$/', $selectedMonth)) {
     $selectedMonth = date('Y-m');
@@ -20,6 +23,10 @@ $selectedDepartmentData = $selectedDepartment !== '' ? find_department($selected
 
 if ($selectedDepartment !== '' && $selectedDepartmentData === null) {
     $selectedDepartment = '';
+}
+
+if (current_user_is_department_scoped()) {
+    $selectedDepartment = current_user_department_id();
 }
 
 $monthlyRecords = attendance_for_month($selectedMonth, $selectedDepartment);
@@ -39,6 +46,7 @@ $daysInMonth = $monthStart ? (int) $monthStart->format('t') : 0;
 for ($day = 1; $day <= $daysInMonth; $day++) {
     $date = sprintf('%s-%02d', $selectedMonth, $day);
     $dayRecords = $monthlyRecords[$date] ?? [];
+    $dayRecords = filter_attendance_records($dayRecords, $selectedEmployeeType, $selectedEmployeeNumber, $selectedStatus);
     $completeCount = 0;
     $lateCount = 0;
     $workedMinutes = 0;
@@ -85,6 +93,9 @@ echo json_encode([
     'ok' => true,
     'month' => $selectedMonth,
     'department' => $selectedDepartment,
+    'employee_type' => $selectedEmployeeType,
+    'employee_number' => $selectedEmployeeNumber,
+    'status' => $selectedStatus,
     'totals' => $monthlyTotals,
     'days' => $days,
     'updated_at' => date('Y-m-d H:i:s'),
