@@ -60,7 +60,7 @@ require_once __DIR__ . '/admin_shell_start.php';
 		</div>
 		<div class="col-12 col-md-5 col-lg-4">
 			<label class="form-label" for="refresh_department">Department</label>
-			<select class="form-select" id="refresh_department" name="department">
+			<select class="form-select" id="refresh_department" name="department" <?= $isDepartmentScoped ? 'disabled' : '' ?>>
 				<option value="">All Departments</option>
 				<?php foreach ($departments as $department): ?>
 					<option value="<?= h($department['department_id']) ?>" <?= $selectedDepartment === $department['department_id'] ? 'selected' : '' ?>>

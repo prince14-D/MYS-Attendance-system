@@ -3,144 +3,320 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';
 
+/**
+ * ---------------------------------------------------------------------
+ * MySQL-backed storage layer.
+ *
+ * All read_*()/write_*()/mutate_*() functions below preserve the exact
+ * in-memory array shapes used throughout the app (nested/keyed arrays),
+ * but persist to MySQL instead of JSON files. Every write_*() call
+ * replaces the full dataset it is given, matching the previous JSON
+ * file semantics.
+ * ---------------------------------------------------------------------
+ */
+
+function attendance_row_to_record(array $row): array
+{
+    return [
+        'employee_number' => (string) $row['employee_number'],
+        'employee_name' => (string) $row['employee_name'],
+        'position' => (string) $row['position'],
+        'department_id' => (string) ($row['department_id'] ?? ''),
+        'department_name' => (string) $row['department_name'],
+        'date' => (string) $row['attendance_date'],
+        'clock_in' => (string) ($row['clock_in'] ?? ''),
+        'clock_out' => (string) ($row['clock_out'] ?? ''),
+        'clock_in_photo' => (string) $row['clock_in_photo'],
+        'clock_in_latitude' => $row['clock_in_latitude'] !== null ? (float) $row['clock_in_latitude'] : null,
+        'clock_in_longitude' => $row['clock_in_longitude'] !== null ? (float) $row['clock_in_longitude'] : null,
+        'clock_in_accuracy_m' => $row['clock_in_accuracy_m'] !== null ? (float) $row['clock_in_accuracy_m'] : null,
+        'status' => (string) $row['status'],
+        'flags' => array_filter([
+            'late' => (bool) $row['late'] ?: null,
+            'late_minutes' => (int) $row['late_minutes'] ?: null,
+            'early_out' => (bool) $row['early_out'] ?: null,
+            'early_out_minutes' => (int) $row['early_out_minutes'] ?: null,
+        ], static fn ($value): bool => $value !== null),
+    ];
+}
+
 function read_attendance(): array
 {
-    $handle = fopen(ATTENDANCE_FILE, 'c+');
+    $rows = db()->query('SELECT * FROM attendance ORDER BY attendance_date, employee_number')->fetchAll();
+    $records = [];
 
-    if (!$handle) {
-        throw new RuntimeException('Unable to open attendance storage.');
+    foreach ($rows as $row) {
+        $records[(string) $row['attendance_date']][(string) $row['employee_number']] = attendance_row_to_record($row);
     }
 
-    flock($handle, LOCK_SH);
-    rewind($handle);
-    $contents = stream_get_contents($handle) ?: '[]';
-    flock($handle, LOCK_UN);
-    fclose($handle);
+    return $records;
+}
 
-    $records = json_decode($contents, true);
+function write_attendance_record(PDO $pdo, string $date, string $employeeNumber, array $record): void
+{
+    $flags = is_array($record['flags'] ?? null) ? $record['flags'] : [];
 
-    return is_array($records) ? $records : [];
+    $stmt = $pdo->prepare(
+        'INSERT INTO attendance (employee_number, employee_name, position, department_id, department_name, attendance_date, clock_in, clock_out, clock_in_photo, clock_in_latitude, clock_in_longitude, clock_in_accuracy_m, status, late, late_minutes, early_out, early_out_minutes)
+         VALUES (:employee_number, :employee_name, :position, :department_id, :department_name, :attendance_date, :clock_in, :clock_out, :clock_in_photo, :clock_in_latitude, :clock_in_longitude, :clock_in_accuracy_m, :status, :late, :late_minutes, :early_out, :early_out_minutes)
+         ON DUPLICATE KEY UPDATE
+            employee_name = VALUES(employee_name), position = VALUES(position), department_id = VALUES(department_id),
+            department_name = VALUES(department_name), clock_in = VALUES(clock_in), clock_out = VALUES(clock_out),
+            clock_in_photo = VALUES(clock_in_photo), clock_in_latitude = VALUES(clock_in_latitude),
+            clock_in_longitude = VALUES(clock_in_longitude), clock_in_accuracy_m = VALUES(clock_in_accuracy_m),
+            status = VALUES(status), late = VALUES(late), late_minutes = VALUES(late_minutes),
+            early_out = VALUES(early_out), early_out_minutes = VALUES(early_out_minutes)'
+    );
+
+    $stmt->execute([
+        'employee_number' => $employeeNumber,
+        'employee_name' => (string) ($record['employee_name'] ?? ''),
+        'position' => (string) ($record['position'] ?? ''),
+        'department_id' => ($record['department_id'] ?? '') !== '' ? $record['department_id'] : null,
+        'department_name' => (string) ($record['department_name'] ?? 'Unassigned'),
+        'attendance_date' => $date,
+        'clock_in' => ($record['clock_in'] ?? '') !== '' ? $record['clock_in'] : null,
+        'clock_out' => ($record['clock_out'] ?? '') !== '' ? $record['clock_out'] : null,
+        'clock_in_photo' => (string) ($record['clock_in_photo'] ?? ''),
+        'clock_in_latitude' => $record['clock_in_latitude'] ?? null,
+        'clock_in_longitude' => $record['clock_in_longitude'] ?? null,
+        'clock_in_accuracy_m' => $record['clock_in_accuracy_m'] ?? null,
+        'status' => (string) ($record['status'] ?? 'Incomplete'),
+        'late' => !empty($flags['late']) ? 1 : 0,
+        'late_minutes' => (int) ($flags['late_minutes'] ?? 0),
+        'early_out' => !empty($flags['early_out']) ? 1 : 0,
+        'early_out_minutes' => (int) ($flags['early_out_minutes'] ?? 0),
+    ]);
 }
 
 function write_attendance(array $records): void
 {
-    $handle = fopen(ATTENDANCE_FILE, 'c+');
+    $pdo = db();
+    $pdo->beginTransaction();
 
-    if (!$handle) {
-        throw new RuntimeException('Unable to open attendance storage.');
+    try {
+        $pdo->exec('DELETE FROM attendance');
+
+        foreach ($records as $date => $dayRecords) {
+            foreach ($dayRecords as $employeeNumber => $record) {
+                write_attendance_record($pdo, (string) $date, (string) $employeeNumber, $record);
+            }
+        }
+
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        $pdo->rollBack();
+        throw $exception;
     }
-
-    flock($handle, LOCK_EX);
-    ftruncate($handle, 0);
-    rewind($handle);
-    fwrite($handle, json_encode($records, JSON_PRETTY_PRINT));
-    fflush($handle);
-    flock($handle, LOCK_UN);
-    fclose($handle);
 }
 
 function mutate_attendance(callable $mutator): mixed
 {
-    $handle = fopen(ATTENDANCE_FILE, 'c+');
+    $pdo = db();
+    $pdo->query("SELECT GET_LOCK('mys_attendance_write_lock', 30)")->fetchColumn();
 
-    if (!$handle) {
-        throw new RuntimeException('Unable to open attendance storage.');
+    try {
+        $records = read_attendance();
+        $result = $mutator($records);
+        write_attendance($records);
+
+        return $result;
+    } finally {
+        $pdo->query("SELECT RELEASE_LOCK('mys_attendance_write_lock')")->fetchColumn();
     }
+}
 
-    flock($handle, LOCK_EX);
-    rewind($handle);
-    $contents = stream_get_contents($handle) ?: '[]';
-    $records = json_decode($contents, true);
 
-    if (!is_array($records)) {
-        $records = [];
-    }
-
-    $result = $mutator($records);
-
-    ftruncate($handle, 0);
-    rewind($handle);
-    fwrite($handle, json_encode($records, JSON_PRETTY_PRINT));
-    fflush($handle);
-    flock($handle, LOCK_UN);
-    fclose($handle);
-
-    return $result;
+function employee_row_to_record(array $row): array
+{
+    return [
+        'employee_number' => (string) $row['employee_number'],
+        'employee_name' => (string) $row['employee_name'],
+        'position' => (string) $row['position'],
+        'employee_type' => in_array(($row['employee_type'] ?? ''), ['Employee', 'Contractor', 'Volunteer'], true) ? $row['employee_type'] : 'Employee',
+        'department_id' => (string) ($row['department_id'] ?? ''),
+        'department_name' => (string) ($row['department_name'] ?? 'Unassigned'),
+        'registered_at' => (string) $row['registered_at'],
+        'updated_at' => (string) $row['updated_at'],
+    ];
 }
 
 function read_employees(): array
 {
-    $contents = file_get_contents(EMPLOYEES_FILE);
-    $employees = json_decode($contents ?: '[]', true);
+    $rows = db()->query(
+        'SELECT e.*, d.department_name AS department_name
+         FROM employees e
+         LEFT JOIN departments d ON d.department_id = e.department_id
+         ORDER BY e.employee_number'
+    )->fetchAll();
 
-    return is_array($employees) ? $employees : [];
+    $employees = [];
+
+    foreach ($rows as $row) {
+        $row['department_name'] = $row['department_name'] ?? 'Unassigned';
+        $employees[(string) $row['employee_number']] = employee_row_to_record($row);
+    }
+
+    return $employees;
 }
 
 function write_employees(array $employees): void
 {
-    $handle = fopen(EMPLOYEES_FILE, 'c+');
+    $pdo = db();
+    $pdo->beginTransaction();
 
-    if (!$handle) {
-        throw new RuntimeException('Unable to open employee storage.');
+    try {
+        $existingIds = array_column($pdo->query('SELECT employee_number FROM employees')->fetchAll(), 'employee_number');
+        $newIds = array_map('strval', array_keys($employees));
+        $removedIds = array_diff($existingIds, $newIds);
+
+        if ($removedIds !== []) {
+            $placeholders = implode(',', array_fill(0, count($removedIds), '?'));
+            $pdo->prepare("DELETE FROM employees WHERE employee_number IN ($placeholders)")->execute(array_values($removedIds));
+        }
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO employees (employee_number, employee_name, position, employee_type, department_id, registered_at, updated_at)
+             VALUES (:employee_number, :employee_name, :position, :employee_type, :department_id, :registered_at, :updated_at)
+             ON DUPLICATE KEY UPDATE employee_name = VALUES(employee_name), position = VALUES(position),
+                employee_type = VALUES(employee_type), department_id = VALUES(department_id), updated_at = VALUES(updated_at)'
+        );
+
+        foreach ($employees as $employeeNumber => $employee) {
+            $stmt->execute([
+                'employee_number' => (string) $employeeNumber,
+                'employee_name' => (string) ($employee['employee_name'] ?? ''),
+                'position' => (string) ($employee['position'] ?? ''),
+                'employee_type' => in_array(($employee['employee_type'] ?? ''), ['Employee', 'Contractor', 'Volunteer'], true) ? $employee['employee_type'] : 'Employee',
+                'department_id' => ($employee['department_id'] ?? '') !== '' ? $employee['department_id'] : null,
+                'registered_at' => (string) ($employee['registered_at'] ?? date('Y-m-d H:i:s')),
+                'updated_at' => (string) ($employee['updated_at'] ?? date('Y-m-d H:i:s')),
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        $pdo->rollBack();
+        throw $exception;
     }
-
-    flock($handle, LOCK_EX);
-    ftruncate($handle, 0);
-    rewind($handle);
-    fwrite($handle, json_encode($employees, JSON_PRETTY_PRINT));
-    fflush($handle);
-    flock($handle, LOCK_UN);
-    fclose($handle);
 }
 
 function read_departments(): array
 {
-    $contents = file_get_contents(DEPARTMENTS_FILE);
-    $departments = json_decode($contents ?: '[]', true);
+    $rows = db()->query('SELECT * FROM departments ORDER BY department_id')->fetchAll();
+    $departments = [];
 
-    return is_array($departments) ? $departments : [];
+    foreach ($rows as $row) {
+        $departments[(string) $row['department_id']] = [
+            'department_id' => (string) $row['department_id'],
+            'department_name' => (string) $row['department_name'],
+            'created_at' => (string) $row['created_at'],
+            'updated_at' => (string) $row['updated_at'],
+        ];
+    }
+
+    return $departments;
 }
 
 function write_departments(array $departments): void
 {
-    $handle = fopen(DEPARTMENTS_FILE, 'c+');
+    $pdo = db();
+    $pdo->beginTransaction();
 
-    if (!$handle) {
-        throw new RuntimeException('Unable to open department storage.');
+    try {
+        $existingIds = array_column($pdo->query('SELECT department_id FROM departments')->fetchAll(), 'department_id');
+        $newIds = array_map('strval', array_keys($departments));
+        $removedIds = array_diff($existingIds, $newIds);
+
+        if ($removedIds !== []) {
+            $placeholders = implode(',', array_fill(0, count($removedIds), '?'));
+            $pdo->prepare("DELETE FROM departments WHERE department_id IN ($placeholders)")->execute(array_values($removedIds));
+        }
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO departments (department_id, department_name, created_at, updated_at)
+             VALUES (:department_id, :department_name, :created_at, :updated_at)
+             ON DUPLICATE KEY UPDATE department_name = VALUES(department_name), updated_at = VALUES(updated_at)'
+        );
+
+        foreach ($departments as $departmentId => $department) {
+            $stmt->execute([
+                'department_id' => (string) $departmentId,
+                'department_name' => (string) ($department['department_name'] ?? ''),
+                'created_at' => (string) ($department['created_at'] ?? date('Y-m-d H:i:s')),
+                'updated_at' => (string) ($department['updated_at'] ?? date('Y-m-d H:i:s')),
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        $pdo->rollBack();
+        throw $exception;
     }
+}
 
-    flock($handle, LOCK_EX);
-    ftruncate($handle, 0);
-    rewind($handle);
-    fwrite($handle, json_encode($departments, JSON_PRETTY_PRINT));
-    fflush($handle);
-    flock($handle, LOCK_UN);
-    fclose($handle);
+function letter_row_to_record(array $row): array
+{
+    return [
+        'letter_id' => (string) $row['letter_id'],
+        'employee_number' => (string) $row['employee_number'],
+        'employee_name' => (string) $row['employee_name'],
+        'position' => (string) $row['position'],
+        'department_id' => (string) ($row['department_id'] ?? ''),
+        'department_name' => (string) $row['department_name'],
+        'letter_type' => (string) $row['letter_type'],
+        'subject' => (string) $row['subject'],
+        'details' => (string) $row['details'],
+        'issued_by' => (string) $row['issued_by'],
+        'issued_at' => (string) $row['issued_at'],
+        'status' => (string) $row['status'],
+        'notes' => (string) $row['notes'],
+    ];
 }
 
 function read_letters(): array
 {
-    $contents = file_get_contents(LETTERS_FILE);
-    $letters = json_decode($contents ?: '[]', true);
+    $rows = db()->query('SELECT * FROM letters ORDER BY issued_at DESC')->fetchAll();
 
-    return is_array($letters) ? $letters : [];
+    return array_map('letter_row_to_record', $rows);
 }
 
 function write_letters(array $letters): void
 {
-    $handle = fopen(LETTERS_FILE, 'c+');
+    $pdo = db();
+    $pdo->beginTransaction();
 
-    if (!$handle) {
-        throw new RuntimeException('Unable to open letter storage.');
+    try {
+        $pdo->exec('DELETE FROM letters');
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO letters (letter_id, employee_number, employee_name, position, department_id, department_name, letter_type, subject, details, issued_by, issued_at, status, notes)
+             VALUES (:letter_id, :employee_number, :employee_name, :position, :department_id, :department_name, :letter_type, :subject, :details, :issued_by, :issued_at, :status, :notes)'
+        );
+
+        foreach ($letters as $letter) {
+            $stmt->execute([
+                'letter_id' => (string) $letter['letter_id'],
+                'employee_number' => (string) $letter['employee_number'],
+                'employee_name' => (string) ($letter['employee_name'] ?? ''),
+                'position' => (string) ($letter['position'] ?? ''),
+                'department_id' => ($letter['department_id'] ?? '') !== '' ? $letter['department_id'] : null,
+                'department_name' => (string) ($letter['department_name'] ?? 'Unassigned'),
+                'letter_type' => (string) $letter['letter_type'],
+                'subject' => (string) ($letter['subject'] ?? ''),
+                'details' => (string) ($letter['details'] ?? ''),
+                'issued_by' => (string) ($letter['issued_by'] ?? ''),
+                'issued_at' => (string) ($letter['issued_at'] ?? date('Y-m-d H:i:s')),
+                'status' => (string) ($letter['status'] ?? 'Issued'),
+                'notes' => (string) ($letter['notes'] ?? ''),
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        $pdo->rollBack();
+        throw $exception;
     }
-
-    flock($handle, LOCK_EX);
-    ftruncate($handle, 0);
-    rewind($handle);
-    fwrite($handle, json_encode($letters, JSON_PRETTY_PRINT));
-    fflush($handle);
-    flock($handle, LOCK_UN);
-    fclose($handle);
 }
 
 function create_letter(array $input, string $issuedBy): array
@@ -198,52 +374,136 @@ function create_letter(array $input, string $issuedBy): array
     return ['ok' => true, 'message' => $letterType . ' issued successfully.', 'letter' => $letter];
 }
 
+function excuse_row_to_record(array $row): array
+{
+    $supportingDocuments = json_decode((string) ($row['supporting_documents'] ?? '[]'), true);
+
+    return [
+        'excuse_id' => (string) $row['excuse_id'],
+        'employee_number' => (string) $row['employee_number'],
+        'employee_name' => (string) $row['employee_name'],
+        'position' => (string) $row['position'],
+        'department_id' => (string) ($row['department_id'] ?? ''),
+        'department_name' => (string) $row['department_name'],
+        'absence_start' => (string) $row['absence_start'],
+        'absence_end' => (string) $row['absence_end'],
+        'absence_time' => (string) $row['absence_time'],
+        'reason' => (string) $row['reason'],
+        'other_reason' => (string) $row['other_reason'],
+        'supporting_documents' => is_array($supportingDocuments) ? $supportingDocuments : [],
+        'supervisor_name' => (string) $row['supervisor_name'],
+        'supervisor_decision' => (string) ($row['supervisor_decision'] ?? ''),
+        'supervisor_comments' => (string) ($row['supervisor_comments'] ?? ''),
+        'hr_reviewed_by' => (string) $row['hr_reviewed_by'],
+        'hr_approved' => (string) ($row['hr_approved'] ?? ''),
+        'created_at' => (string) $row['created_at'],
+        'reviewed_at' => (string) ($row['reviewed_at'] ?? ''),
+    ];
+}
+
 function read_excuses(): array
 {
-    $contents = file_get_contents(EXCUSES_FILE);
-    $excuses = json_decode($contents ?: '[]', true);
+    $rows = db()->query('SELECT * FROM excuses ORDER BY created_at DESC')->fetchAll();
 
-    return is_array($excuses) ? $excuses : [];
+    return array_map('excuse_row_to_record', $rows);
 }
 
 function write_excuses(array $excuses): void
 {
-    $handle = fopen(EXCUSES_FILE, 'c+');
+    $pdo = db();
+    $pdo->beginTransaction();
 
-    if (!$handle) {
-        throw new RuntimeException('Unable to open excuse storage.');
+    try {
+        $pdo->exec('DELETE FROM excuses');
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO excuses (excuse_id, employee_number, employee_name, position, department_id, department_name, absence_start, absence_end, absence_time, reason, other_reason, supporting_documents, supervisor_name, supervisor_decision, supervisor_comments, hr_reviewed_by, hr_approved, created_at, reviewed_at)
+             VALUES (:excuse_id, :employee_number, :employee_name, :position, :department_id, :department_name, :absence_start, :absence_end, :absence_time, :reason, :other_reason, :supporting_documents, :supervisor_name, :supervisor_decision, :supervisor_comments, :hr_reviewed_by, :hr_approved, :created_at, :reviewed_at)'
+        );
+
+        foreach ($excuses as $excuse) {
+            $stmt->execute([
+                'excuse_id' => (string) $excuse['excuse_id'],
+                'employee_number' => (string) $excuse['employee_number'],
+                'employee_name' => (string) ($excuse['employee_name'] ?? ''),
+                'position' => (string) ($excuse['position'] ?? ''),
+                'department_id' => ($excuse['department_id'] ?? '') !== '' ? $excuse['department_id'] : null,
+                'department_name' => (string) ($excuse['department_name'] ?? ''),
+                'absence_start' => (string) $excuse['absence_start'],
+                'absence_end' => (string) $excuse['absence_end'],
+                'absence_time' => (string) ($excuse['absence_time'] ?? ''),
+                'reason' => (string) $excuse['reason'],
+                'other_reason' => (string) ($excuse['other_reason'] ?? ''),
+                'supporting_documents' => json_encode($excuse['supporting_documents'] ?? []),
+                'supervisor_name' => (string) ($excuse['supervisor_name'] ?? ''),
+                'supervisor_decision' => ($excuse['supervisor_decision'] ?? '') !== '' ? $excuse['supervisor_decision'] : null,
+                'supervisor_comments' => (string) ($excuse['supervisor_comments'] ?? ''),
+                'hr_reviewed_by' => (string) ($excuse['hr_reviewed_by'] ?? ''),
+                'hr_approved' => ($excuse['hr_approved'] ?? '') !== '' ? $excuse['hr_approved'] : null,
+                'created_at' => (string) ($excuse['created_at'] ?? date('Y-m-d H:i:s')),
+                'reviewed_at' => ($excuse['reviewed_at'] ?? '') !== '' ? $excuse['reviewed_at'] : null,
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        $pdo->rollBack();
+        throw $exception;
     }
+}
 
-    flock($handle, LOCK_EX);
-    ftruncate($handle, 0);
-    rewind($handle);
-    fwrite($handle, json_encode($excuses, JSON_PRETTY_PRINT));
-    fflush($handle);
-    flock($handle, LOCK_UN);
-    fclose($handle);
+function employee_document_row_to_record(array $row): array
+{
+    return [
+        'document_id' => (string) $row['document_id'],
+        'employee_number' => (string) $row['employee_number'],
+        'label' => (string) $row['label'],
+        'original_name' => (string) $row['original_name'],
+        'filename' => (string) $row['filename'],
+        'mime_type' => (string) $row['mime_type'],
+        'size' => (int) $row['size'],
+        'uploaded_at' => (string) $row['uploaded_at'],
+    ];
 }
 
 function read_employee_documents(): array
 {
-    $contents = file_get_contents(EMPLOYEE_DOCUMENTS_FILE);
-    $documents = json_decode($contents ?: '[]', true);
+    $rows = db()->query('SELECT * FROM employee_documents ORDER BY uploaded_at DESC')->fetchAll();
 
-    return is_array($documents) ? $documents : [];
+    return array_map('employee_document_row_to_record', $rows);
 }
 
 function write_employee_documents(array $documents): void
 {
-    $handle = fopen(EMPLOYEE_DOCUMENTS_FILE, 'c+');
-    if (!$handle) {
-        throw new RuntimeException('Unable to open employee document storage.');
+    $pdo = db();
+    $pdo->beginTransaction();
+
+    try {
+        $pdo->exec('DELETE FROM employee_documents');
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO employee_documents (document_id, employee_number, label, original_name, filename, mime_type, size, uploaded_at)
+             VALUES (:document_id, :employee_number, :label, :original_name, :filename, :mime_type, :size, :uploaded_at)'
+        );
+
+        foreach ($documents as $document) {
+            $stmt->execute([
+                'document_id' => (string) $document['document_id'],
+                'employee_number' => (string) $document['employee_number'],
+                'label' => (string) ($document['label'] ?? ''),
+                'original_name' => (string) ($document['original_name'] ?? ''),
+                'filename' => (string) $document['filename'],
+                'mime_type' => (string) ($document['mime_type'] ?? ''),
+                'size' => (int) ($document['size'] ?? 0),
+                'uploaded_at' => (string) ($document['uploaded_at'] ?? date('Y-m-d H:i:s')),
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        $pdo->rollBack();
+        throw $exception;
     }
-    flock($handle, LOCK_EX);
-    ftruncate($handle, 0);
-    rewind($handle);
-    fwrite($handle, json_encode($documents, JSON_PRETTY_PRINT));
-    fflush($handle);
-    flock($handle, LOCK_UN);
-    fclose($handle);
 }
 
 function employee_documents_for(string $employeeNumber): array
@@ -487,67 +747,75 @@ function default_geofence_settings(): array
 
 function read_geofence_settings(): array
 {
-    $contents = file_get_contents(GEOFENCE_FILE);
-    $settings = json_decode($contents ?: '[]', true);
     $defaults = default_geofence_settings();
+    $row = db()->query('SELECT * FROM geofence_settings WHERE id = 1')->fetch();
 
-    if (!is_array($settings)) {
+    if (!$row) {
         return $defaults;
     }
 
-    $enabled = (bool) ($settings['enabled'] ?? false);
-    $legacyLatitude = isset($settings['latitude']) && is_numeric($settings['latitude']) ? (float) $settings['latitude'] : null;
-    $legacyLongitude = isset($settings['longitude']) && is_numeric($settings['longitude']) ? (float) $settings['longitude'] : null;
-    $legacyRadius = isset($settings['radius_meters']) && is_numeric($settings['radius_meters'])
-        ? (int) round((float) $settings['radius_meters'])
-        : (int) $defaults['radius_meters'];
-
-    $locations = normalize_geofence_locations(is_array($settings['locations'] ?? null) ? $settings['locations'] : []);
-
-    if ($locations === [] && $legacyLatitude !== null && $legacyLongitude !== null) {
-        $locations = [[
-            'name' => 'Primary Location',
-            'latitude' => $legacyLatitude,
-            'longitude' => $legacyLongitude,
-            'radius_meters' => max(20, min(5000, $legacyRadius)),
-        ]];
-    }
-
-    if ($legacyLatitude !== null && ($legacyLatitude < -90 || $legacyLatitude > 90)) {
-        $legacyLatitude = null;
-    }
-
-    if ($legacyLongitude !== null && ($legacyLongitude < -180 || $legacyLongitude > 180)) {
-        $legacyLongitude = null;
-    }
-
-    $legacyRadius = max(20, min(5000, $legacyRadius));
+    $locationRows = db()->query('SELECT * FROM geofence_locations ORDER BY sort_order, location_id')->fetchAll();
+    $locations = normalize_geofence_locations(array_map(static function (array $locationRow): array {
+        return [
+            'name' => (string) $locationRow['name'],
+            'latitude' => (float) $locationRow['latitude'],
+            'longitude' => (float) $locationRow['longitude'],
+            'radius_meters' => (int) $locationRow['radius_meters'],
+        ];
+    }, $locationRows));
 
     return [
-        'enabled' => $enabled,
-        'latitude' => $legacyLatitude,
-        'longitude' => $legacyLongitude,
-        'radius_meters' => $legacyRadius,
+        'enabled' => (bool) $row['enabled'],
+        'latitude' => $row['latitude'] !== null ? (float) $row['latitude'] : null,
+        'longitude' => $row['longitude'] !== null ? (float) $row['longitude'] : null,
+        'radius_meters' => (int) $row['radius_meters'],
         'locations' => $locations,
-        'updated_at' => (string) ($settings['updated_at'] ?? $defaults['updated_at']),
+        'updated_at' => (string) $row['updated_at'],
     ];
 }
 
 function write_geofence_settings(array $settings): void
 {
-    $handle = fopen(GEOFENCE_FILE, 'c+');
+    $pdo = db();
+    $pdo->beginTransaction();
 
-    if (!$handle) {
-        throw new RuntimeException('Unable to open geofence storage.');
+    try {
+        $stmt = $pdo->prepare(
+            'INSERT INTO geofence_settings (id, enabled, latitude, longitude, radius_meters, updated_at)
+             VALUES (1, :enabled, :latitude, :longitude, :radius_meters, :updated_at)
+             ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), latitude = VALUES(latitude),
+                longitude = VALUES(longitude), radius_meters = VALUES(radius_meters), updated_at = VALUES(updated_at)'
+        );
+        $stmt->execute([
+            'enabled' => !empty($settings['enabled']) ? 1 : 0,
+            'latitude' => $settings['latitude'] ?? null,
+            'longitude' => $settings['longitude'] ?? null,
+            'radius_meters' => (int) ($settings['radius_meters'] ?? 150),
+            'updated_at' => (string) ($settings['updated_at'] ?? date('Y-m-d H:i:s')),
+        ]);
+
+        $pdo->exec('DELETE FROM geofence_locations');
+
+        $locationStmt = $pdo->prepare(
+            'INSERT INTO geofence_locations (name, latitude, longitude, radius_meters, sort_order)
+             VALUES (:name, :latitude, :longitude, :radius_meters, :sort_order)'
+        );
+
+        foreach (($settings['locations'] ?? []) as $index => $location) {
+            $locationStmt->execute([
+                'name' => (string) ($location['name'] ?? 'Location ' . ($index + 1)),
+                'latitude' => (float) $location['latitude'],
+                'longitude' => (float) $location['longitude'],
+                'radius_meters' => (int) ($location['radius_meters'] ?? 150),
+                'sort_order' => (int) $index,
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        $pdo->rollBack();
+        throw $exception;
     }
-
-    flock($handle, LOCK_EX);
-    ftruncate($handle, 0);
-    rewind($handle);
-    fwrite($handle, json_encode($settings, JSON_PRETTY_PRINT));
-    fflush($handle);
-    flock($handle, LOCK_UN);
-    fclose($handle);
 }
 
 function update_geofence_settings(string $enabled, string $latitude, string $longitude, string $radiusMeters, ?array $locations = null): array
@@ -642,27 +910,51 @@ function geo_distance_meters(float $fromLat, float $fromLon, float $toLat, float
 
 function read_devices(): array
 {
-    $contents = file_get_contents(DEVICES_FILE);
-    $devices = json_decode($contents ?: '[]', true);
+    $rows = db()->query('SELECT * FROM devices ORDER BY device_id')->fetchAll();
 
-    return is_array($devices) ? $devices : [];
+    return array_map(static function (array $row): array {
+        return [
+            'device_id' => (string) $row['device_id'],
+            'device_name' => (string) $row['device_name'],
+            'location_name' => (string) $row['location_name'],
+            'registered_at' => (string) $row['registered_at'],
+            'updated_at' => (string) $row['updated_at'],
+        ];
+    }, $rows);
 }
 
 function write_devices(array $devices): void
 {
-    $handle = fopen(DEVICES_FILE, 'c+');
+    $pdo = db();
+    $pdo->beginTransaction();
 
-    if (!$handle) {
-        throw new RuntimeException('Unable to open device storage.');
+    try {
+        $pdo->exec('DELETE FROM devices');
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO devices (device_id, device_name, location_name, registered_at, updated_at)
+             VALUES (:device_id, :device_name, :location_name, :registered_at, :updated_at)'
+        );
+
+        foreach ($devices as $device) {
+            if (!is_array($device)) {
+                continue;
+            }
+
+            $stmt->execute([
+                'device_id' => (string) $device['device_id'],
+                'device_name' => (string) ($device['device_name'] ?? ''),
+                'location_name' => (string) ($device['location_name'] ?? ''),
+                'registered_at' => (string) ($device['registered_at'] ?? date('Y-m-d H:i:s')),
+                'updated_at' => (string) ($device['updated_at'] ?? date('Y-m-d H:i:s')),
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        $pdo->rollBack();
+        throw $exception;
     }
-
-    flock($handle, LOCK_EX);
-    ftruncate($handle, 0);
-    rewind($handle);
-    fwrite($handle, json_encode($devices, JSON_PRETTY_PRINT));
-    fflush($handle);
-    flock($handle, LOCK_UN);
-    fclose($handle);
 }
 
 function normalize_device_id(string $deviceId): string
@@ -1126,11 +1418,12 @@ function find_department(string $departmentId): ?array
     return $departments[$departmentId] ?? null;
 }
 
-function register_employee(string $employeeNumber, string $employeeName, string $departmentId, string $position = ''): array
+function register_employee(string $employeeNumber, string $employeeName, string $departmentId, string $position = '', string $employeeType = 'Employee'): array
 {
     $employeeNumber = normalize_employee_number($employeeNumber);
     $employeeName = normalize_person_name($employeeName);
     $position = normalize_position($position);
+    $employeeType = in_array($employeeType, ['Employee', 'Contractor', 'Volunteer'], true) ? $employeeType : 'Employee';
     $department = normalize_department_id($departmentId) !== '' ? find_department($departmentId) : null;
 
     if ($employeeNumber === '' || !preg_match('/^[A-Z0-9-]{2,30}$/', $employeeNumber)) {
@@ -1155,6 +1448,7 @@ function register_employee(string $employeeNumber, string $employeeName, string 
         'employee_number' => $employeeNumber,
         'employee_name' => $employeeName,
         'position' => $position,
+        'employee_type' => $employeeType,
         'department_id' => $department['department_id'] ?? '',
         'department_name' => $department['department_name'] ?? 'Unassigned',
         'registered_at' => $employees[$employeeNumber]['registered_at'] ?? date('Y-m-d H:i:s'),
@@ -1170,7 +1464,7 @@ function register_employee(string $employeeNumber, string $employeeName, string 
     ];
 }
 
-function update_employee_record(string $originalEmployeeNumber, string $employeeNumber, string $employeeName, string $departmentId, string $position = ''): array
+function update_employee_record(string $originalEmployeeNumber, string $employeeNumber, string $employeeName, string $departmentId, string $position = '', string $employeeType = ''): array
 {
     $originalEmployeeNumber = normalize_employee_number($originalEmployeeNumber);
     $employeeNumber = normalize_employee_number($employeeNumber);
@@ -1189,7 +1483,11 @@ function update_employee_record(string $originalEmployeeNumber, string $employee
         return ['ok' => false, 'message' => 'Another employee already uses that employee number.'];
     }
 
-    $result = register_employee($employeeNumber, $employeeName, $departmentId, $position);
+    if ($employeeType === '') {
+        $employeeType = (string) ($employees[$originalEmployeeNumber]['employee_type'] ?? 'Employee');
+    }
+
+    $result = register_employee($employeeNumber, $employeeName, $departmentId, $position, $employeeType);
 
     if (!$result['ok']) {
         return $result;
@@ -1738,9 +2036,10 @@ function restore_from_backup_upload(array $file): array
         $departments[$departmentId]['department_id'] = $normalized;
     }
 
-    write_attendance($attendance);
-    write_employees($employees);
+    // Write in FK dependency order: departments -> employees -> attendance.
     write_departments($departments);
+    write_employees($employees);
+    write_attendance($attendance);
     write_geofence_settings([
         'enabled' => (bool) ($geofence['enabled'] ?? false),
         'latitude' => isset($geofence['latitude']) && is_numeric($geofence['latitude']) ? (float) $geofence['latitude'] : null,
@@ -2136,40 +2435,29 @@ function record_attendance_action(string $employeeNumber, string $action, string
         }
     }
 
-    $result = mutate_attendance(static function (array &$records) use (
-        $action,
-        $date,
-        $departmentId,
-        $departmentName,
-        $employeeName,
-        $employeeNumber,
-        $position,
-        $savedClockInPhoto,
-        $time,
-        $validLocation
-    ): array {
-        if (!isset($records[$date])) {
-            $records[$date] = [];
-        }
+    // Row-level transaction: locks/reads/writes only this employee's row for this date,
+    // instead of the full attendance table (avoids O(n) rewrite per clock action).
+    $pdo = db();
+    $pdo->beginTransaction();
 
-        if (!isset($records[$date][$employeeNumber])) {
-            $record = [
-                'employee_number' => $employeeNumber,
-                'employee_name' => $employeeName,
-                'position' => $position,
-                'department_id' => $departmentId,
-                'department_name' => $departmentName,
-                'date' => $date,
-                'clock_in' => '',
-                'clock_out' => '',
-                'clock_in_photo' => '',
-                'status' => 'Incomplete',
-            ];
+    try {
+        $existingStmt = $pdo->prepare('SELECT * FROM attendance WHERE employee_number = :employee_number AND attendance_date = :attendance_date FOR UPDATE');
+        $existingStmt->execute(['employee_number' => $employeeNumber, 'attendance_date' => $date]);
+        $existingRow = $existingStmt->fetch();
 
-            $records[$date][$employeeNumber] = merge_attendance_flags($record);
-        }
+        $record = $existingRow !== false ? attendance_row_to_record($existingRow) : merge_attendance_flags([
+            'employee_number' => $employeeNumber,
+            'employee_name' => $employeeName,
+            'position' => $position,
+            'department_id' => $departmentId,
+            'department_name' => $departmentName,
+            'date' => $date,
+            'clock_in' => '',
+            'clock_out' => '',
+            'clock_in_photo' => '',
+            'status' => 'Incomplete',
+        ]);
 
-        $record = $records[$date][$employeeNumber];
         $record['employee_name'] = $employeeName;
         $record['position'] = $position;
         $record['department_id'] = $departmentId;
@@ -2177,6 +2465,7 @@ function record_attendance_action(string $employeeNumber, string $action, string
 
         if ($action === 'clock_in') {
             if ($record['clock_in'] !== '') {
+                $pdo->rollBack();
                 return ['ok' => false, 'message' => 'This employee has already clocked in today.'];
             }
 
@@ -2202,10 +2491,12 @@ function record_attendance_action(string $employeeNumber, string $action, string
             }
         } else {
             if ($record['clock_in'] === '') {
+                $pdo->rollBack();
                 return ['ok' => false, 'message' => 'You must clock in first before you can clock out.'];
             }
 
             if ($record['clock_out'] !== '') {
+                $pdo->rollBack();
                 return ['ok' => false, 'message' => 'This employee has already clocked out today.'];
             }
 
@@ -2216,17 +2507,20 @@ function record_attendance_action(string $employeeNumber, string $action, string
         }
 
         $record['status'] = $record['clock_in'] !== '' && $record['clock_out'] !== '' ? 'Complete' : 'Incomplete';
-        $records[$date][$employeeNumber] = merge_attendance_flags($record);
+        $record = merge_attendance_flags($record);
+
+        write_attendance_record($pdo, $date, $employeeNumber, $record);
+        $pdo->commit();
 
         $lateMinutesResult = 0;
         $lateDurationResult = '';
 
         if ($action === 'clock_in') {
-            $lateMinutesResult = (int) (($records[$date][$employeeNumber]['flags']['late_minutes'] ?? 0));
+            $lateMinutesResult = (int) ($record['flags']['late_minutes'] ?? 0);
             $lateDurationResult = $lateMinutesResult > 0 ? format_minutes_duration($lateMinutesResult) : '';
         }
 
-        return [
+        $result = [
             'ok' => true,
             'message' => $message,
             'title' => $title,
@@ -2242,7 +2536,10 @@ function record_attendance_action(string $employeeNumber, string $action, string
             'late_minutes' => $lateMinutesResult,
             'late_duration' => $lateDurationResult,
         ];
-    });
+    } catch (Throwable $exception) {
+        $pdo->rollBack();
+        throw $exception;
+    }
 
     if (!$result['ok'] && $savedClockInPhoto !== '') {
         delete_clock_in_photo_file($savedClockInPhoto);

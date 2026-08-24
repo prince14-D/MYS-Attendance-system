@@ -120,6 +120,7 @@ require_once __DIR__ . '/admin_shell_start.php';
 								<th>Employee Number</th>
 								<th>Name</th>
 								<th>Position</th>
+								<th>Type</th>
 								<th>Department</th>
 								<th>Action</th>
 							</tr>
@@ -145,6 +146,13 @@ require_once __DIR__ . '/admin_shell_start.php';
 									</td>
 									<td><input class="form-control form-control-sm" form="<?= h($employeeFormId) ?>" name="employee_name" type="text" value="<?= h($employee['employee_name']) ?>" required></td>
 									<td><input class="form-control form-control-sm" form="<?= h($employeeFormId) ?>" name="position" type="text" value="<?= h($employee['position'] ?? '') ?>"></td>
+									<td>
+										<select class="form-select form-select-sm" form="<?= h($employeeFormId) ?>" name="employee_type">
+											<?php foreach (['Employee', 'Contractor', 'Volunteer'] as $employeeTypeOption): ?>
+												<option value="<?= h($employeeTypeOption) ?>" <?= ($employee['employee_type'] ?? 'Employee') === $employeeTypeOption ? 'selected' : '' ?>><?= h($employeeTypeOption) ?></option>
+											<?php endforeach; ?>
+										</select>
+									</td>
 									<td>
 										<select class="form-select form-select-sm" form="<?= h($employeeFormId) ?>" name="department_id">
 											<option value="">Unassigned</option>

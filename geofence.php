@@ -102,7 +102,15 @@ require_once __DIR__ . '/admin_shell_start.php';
 			</div>
 
 			<div class="alert muted mt-3 mb-3">
-				<strong>Phone setup:</strong> open the attendance app on the device, copy the generated device ID above, and paste it into the phone when prompted. The phone must use the same ID to be allowed at this location.
+				<strong>Phone setup (2 ways):</strong>
+				<ol class="mb-2 ps-3">
+					<li>Preferred: click "Generate Device ID" above, save this device, then copy the one-time setup link below and open it once on the phone (e.g. send it via WhatsApp/SMS and tap it). The phone will remember this ID automatically.</li>
+					<li>Alternative: open the attendance app on the phone once. It shows its own auto-generated Device ID near the bottom of the clock-in screen &mdash; copy that value and paste it into the Device ID field above instead of generating one.</li>
+				</ol>
+				<div class="input-group">
+					<input class="form-control" id="deviceSetupLink" type="text" readonly placeholder="Generate or enter a Device ID first">
+					<button class="btn btn-outline-secondary" type="button" id="copySetupLinkButton">Copy Link</button>
+				</div>
 			</div>
 
 			<button class="btn btn-primary btn-lg w-100" id="saveDeviceButton" type="submit">Register Device</button>
@@ -173,6 +181,17 @@ require_once __DIR__ . '/admin_shell_start.php';
     const deviceAdminActionInput = document.getElementById('device_admin_action');
     const saveDeviceButton = document.getElementById('saveDeviceButton');
     const generateButton = document.getElementById('generateDeviceIdButton');
+    const deviceSetupLinkInput = document.getElementById('deviceSetupLink');
+    const copySetupLinkButton = document.getElementById('copySetupLinkButton');
+
+    function updateDeviceSetupLink() {
+        if (!deviceSetupLinkInput) {
+            return;
+        }
+
+        const id = (deviceIdInput?.value || '').trim();
+        deviceSetupLinkInput.value = id ? `${window.location.origin}/index.php?device_id=${encodeURIComponent(id)}` : '';
+    }
 
     function parseLocations() {
         const raw = locationTextarea ? (locationTextarea.value || '[]') : '[]';
@@ -290,6 +309,7 @@ require_once __DIR__ . '/admin_shell_start.php';
                 saveDeviceButton.textContent = 'Update Device';
             }
 
+            updateDeviceSetupLink();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         });
     });
@@ -300,9 +320,15 @@ require_once __DIR__ . '/admin_shell_start.php';
                 ? crypto.randomUUID()
                 : 'device-' + Date.now() + '-' + Math.random().toString(16).slice(2, 8);
             deviceIdInput.value = String(value).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
+            updateDeviceSetupLink();
         });
     }
 
+    deviceIdInput?.addEventListener('input', updateDeviceSetupLink);
+
+    copySetupLinkButton?.addEventListener('click', () => copyDeviceId(deviceSetupLinkInput?.value || ''));
+
+    updateDeviceSetupLink();
     resetDeviceForm();
 </script>
 <?php

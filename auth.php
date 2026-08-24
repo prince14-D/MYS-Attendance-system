@@ -25,13 +25,37 @@ function roles(): array
 
 function read_users(): array
 {
-    $users = json_decode(file_get_contents(USERS_FILE) ?: '[]', true);
-    return is_array($users) ? $users : [];
+    return db()->query('SELECT username, password_hash, role, department_id, created_at FROM users ORDER BY username')->fetchAll();
 }
 
 function write_users(array $users): void
 {
-    file_put_contents(USERS_FILE, json_encode(array_values($users), JSON_PRETTY_PRINT), LOCK_EX);
+    $pdo = db();
+    $pdo->beginTransaction();
+
+    try {
+        $pdo->exec('DELETE FROM users');
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO users (username, password_hash, role, department_id, created_at)
+             VALUES (:username, :password_hash, :role, :department_id, :created_at)'
+        );
+
+        foreach ($users as $user) {
+            $stmt->execute([
+                'username' => (string) $user['username'],
+                'password_hash' => (string) $user['password_hash'],
+                'role' => (string) ($user['role'] ?? 'viewer'),
+                'department_id' => ($user['department_id'] ?? '') !== '' ? $user['department_id'] : null,
+                'created_at' => (string) ($user['created_at'] ?? date('Y-m-d H:i:s')),
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        $pdo->rollBack();
+        throw $exception;
+    }
 }
 
 function current_user_role(): string
@@ -43,6 +67,22 @@ function current_user_role(): string
 function current_username(): string
 {
     return (string) ($_SESSION['username'] ?? '');
+}
+
+function current_user_department_id(): string
+{
+    return (string) ($_SESSION['department_id'] ?? '');
+}
+
+// Roles whose dashboard/data views are locked to their assigned department.
+function department_scoped_roles(): array
+{
+    return ['supervisor'];
+}
+
+function current_user_is_department_scoped(): bool
+{
+    return in_array(current_user_role(), department_scoped_roles(), true);
 }
 
 function require_roles(array $allowedRoles): void
@@ -62,6 +102,7 @@ function attempt_admin_login(string $username, string $password): bool
             $_SESSION['admin_logged_in'] = true;
             $_SESSION['username'] = $username;
             $_SESSION['user_role'] = $user['role'] ?? 'viewer';
+            $_SESSION['department_id'] = (string) ($user['department_id'] ?? '');
             return true;
         }
     }
@@ -69,17 +110,21 @@ function attempt_admin_login(string $username, string $password): bool
     return false;
 }
 
-function create_system_user(string $username, string $password, string $role): array
+function create_system_user(string $username, string $password, string $role, string $departmentId = ''): array
 {
     $username = trim($username);
     if (!preg_match('/^[A-Za-z0-9._-]{3,40}$/', $username) || strlen($password) < 8 || !in_array($role, roles(), true)) return ['ok' => false, 'message' => 'Use a 3–40 character username, an 8+ character password, and a valid role.'];
+    $departmentId = normalize_department_id($departmentId);
+    if ($departmentId !== '' && find_department($departmentId) === null) return ['ok' => false, 'message' => 'Select a registered department.'];
     $users = read_users(); foreach ($users as $user) { if (strcasecmp((string) ($user['username'] ?? ''), $username) === 0) return ['ok' => false, 'message' => 'That username already exists.']; }
-    $users[] = ['username' => $username, 'password_hash' => password_hash($password, PASSWORD_DEFAULT), 'role' => $role, 'created_at' => date('Y-m-d H:i:s')]; write_users($users); return ['ok' => true, 'message' => 'User created.'];
+    $users[] = ['username' => $username, 'password_hash' => password_hash($password, PASSWORD_DEFAULT), 'role' => $role, 'department_id' => $departmentId, 'created_at' => date('Y-m-d H:i:s')]; write_users($users); return ['ok' => true, 'message' => 'User created.'];
 }
 
-function update_system_user(string $username, string $role, string $newPassword = ''): array
+function update_system_user(string $username, string $role, string $newPassword = '', string $departmentId = ''): array
 {
-    $users = read_users(); foreach ($users as &$user) { if (($user['username'] ?? '') === $username) { if (!in_array($role, roles(), true)) return ['ok' => false, 'message' => 'Invalid role.']; if ($username === current_username() && $role !== 'admin') return ['ok' => false, 'message' => 'You cannot remove your own Admin role.']; $user['role'] = $role; if ($newPassword !== '') { if (strlen($newPassword) < 8) return ['ok' => false, 'message' => 'New passwords must be at least 8 characters.' ]; $user['password_hash'] = password_hash($newPassword, PASSWORD_DEFAULT); } write_users($users); return ['ok' => true, 'message' => 'User updated.']; } } return ['ok' => false, 'message' => 'User not found.'];
+    $departmentId = normalize_department_id($departmentId);
+    if ($departmentId !== '' && find_department($departmentId) === null) return ['ok' => false, 'message' => 'Select a registered department.'];
+    $users = read_users(); foreach ($users as &$user) { if (($user['username'] ?? '') === $username) { if (!in_array($role, roles(), true)) return ['ok' => false, 'message' => 'Invalid role.']; if ($username === current_username() && $role !== 'admin') return ['ok' => false, 'message' => 'You cannot remove your own Admin role.']; $user['role'] = $role; $user['department_id'] = $departmentId; if ($newPassword !== '') { if (strlen($newPassword) < 8) return ['ok' => false, 'message' => 'New passwords must be at least 8 characters.' ]; $user['password_hash'] = password_hash($newPassword, PASSWORD_DEFAULT); } write_users($users); return ['ok' => true, 'message' => 'User updated.']; } } return ['ok' => false, 'message' => 'User not found.'];
 }
 
 function delete_system_user(string $username): array

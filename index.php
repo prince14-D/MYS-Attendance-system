@@ -172,6 +172,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                                 <button class="button secondary" type="submit" name="action" value="clock_out" id="clockOutButton">Clock Out</button>
                             </div>
                         </form>
+                        <details class="device-id-details" id="deviceIdDetails">
+                            <summary>This phone's Device ID (for admin registration)</summary>
+                            <p class="muted">If this phone shows "not registered" when clocking in, copy this ID and send it to your admin to register at Setup Geofence &rarr; Register Phone / Device.</p>
+                            <div class="device-id-readout">
+                                <code id="deviceIdDisplay"></code>
+                                <button class="button secondary small-button" type="button" id="copyDeviceIdButton">Copy</button>
+                            </div>
+                        </details>
                     <?php endif; ?>
                 </div>
             </div>
@@ -354,6 +362,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             deviceIdField.value = deviceId;
         }
 
+        const deviceIdDisplay = document.getElementById('deviceIdDisplay');
+        const copyDeviceIdButton = document.getElementById('copyDeviceIdButton');
+
+        if (deviceIdDisplay) {
+            deviceIdDisplay.textContent = deviceId;
+        }
+
+        copyDeviceIdButton?.addEventListener('click', () => {
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(deviceId).catch(() => {});
+            }
+        });
+
         if (deviceNameField) {
             deviceNameField.value = getDeviceName();
         }
@@ -418,6 +439,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         });
 
         function getOrCreateDeviceId() {
+            const params = new URLSearchParams(window.location.search);
+            const presetId = (params.get('device_id') || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
+
+            if (presetId && /^[-a-z0-9]{6,64}$/.test(presetId)) {
+                localStorage.setItem(deviceIdKey, presetId);
+                params.delete('device_id');
+                const cleanedQuery = params.toString();
+                const cleanedUrl = window.location.pathname + (cleanedQuery ? `?${cleanedQuery}` : '');
+                window.history.replaceState({}, document.title, cleanedUrl);
+                return presetId;
+            }
+
             const existing = localStorage.getItem(deviceIdKey) || '';
             if (existing && /^[-a-z0-9]{6,64}$/.test(existing)) {
                 return existing;

@@ -38,7 +38,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $_POST['employee_number'] ?? '',
             $_POST['employee_name'] ?? '',
             $_POST['department_id'] ?? '',
-            $_POST['position'] ?? ''
+            $_POST['position'] ?? '',
+            $_POST['employee_type'] ?? ''
         );
     } elseif ($adminAction === 'import_employees') {
         $registrationResult = import_employees_from_upload($_FILES['employee_file'] ?? []);
@@ -63,7 +64,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $_POST['employee_number'] ?? '',
             $_POST['employee_name'] ?? '',
             $_POST['department_id'] ?? '',
-            $_POST['position'] ?? ''
+            $_POST['position'] ?? '',
+            $_POST['employee_type'] ?? 'Employee'
         );
     } elseif ($adminAction === 'update_geofence') {
         $geofenceLocations = [];
@@ -110,13 +112,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $registrationResult = delete_employee_document($_POST['document_id'] ?? '', $_POST['employee_number'] ?? '');
     } elseif ($adminAction === 'update_employee_profile') {
         $employeeNumber = $_POST['employee_number'] ?? '';
-        $registrationResult = update_employee_record($employeeNumber, $employeeNumber, $_POST['employee_name'] ?? '', $_POST['department_id'] ?? '', $_POST['position'] ?? '');
+        $registrationResult = update_employee_record($employeeNumber, $employeeNumber, $_POST['employee_name'] ?? '', $_POST['department_id'] ?? '', $_POST['position'] ?? '', $_POST['employee_type'] ?? '');
     } elseif ($adminAction === 'create_system_user') {
         require_roles(['admin']);
-        $registrationResult = create_system_user($_POST['username'] ?? '', $_POST['password'] ?? '', $_POST['role'] ?? '');
+        $registrationResult = create_system_user($_POST['username'] ?? '', $_POST['password'] ?? '', $_POST['role'] ?? '', $_POST['department_id'] ?? '');
     } elseif ($adminAction === 'update_system_user') {
         require_roles(['admin']);
-        $registrationResult = update_system_user($_POST['username'] ?? '', $_POST['role'] ?? '', $_POST['new_password'] ?? '');
+        $registrationResult = update_system_user($_POST['username'] ?? '', $_POST['role'] ?? '', $_POST['new_password'] ?? '', $_POST['department_id'] ?? '');
     } elseif ($adminAction === 'delete_system_user') {
         require_roles(['admin']);
         $registrationResult = delete_system_user($_POST['username'] ?? '');
@@ -145,6 +147,14 @@ $selectedDepartmentData = $selectedDepartment !== '' ? find_department($selected
 
 if ($selectedDepartment !== '' && $selectedDepartmentData === null) {
     $selectedDepartment = '';
+}
+
+// Department-scoped roles (e.g. Supervisor) are locked to their assigned department, ignoring any URL override.
+$isDepartmentScoped = current_user_is_department_scoped();
+
+if ($isDepartmentScoped) {
+    $selectedDepartment = current_user_department_id();
+    $selectedDepartmentData = $selectedDepartment !== '' ? find_department($selectedDepartment) : null;
 }
 
 $allowedAdminPages = [
@@ -200,8 +210,23 @@ $records = attendance_for_date($selectedDate, $selectedDepartment);
 $monthlyRecords = attendance_for_month($selectedMonth, $selectedDepartment);
 $monthlyExcuses = excuses_for_month($selectedMonth, $selectedDepartment);
 $dates = all_attendance_dates();
-$employees = all_employees();
 $departments = all_departments();
+
+// A department-scoped account with no department assigned yet should see no data, not everything.
+if ($isDepartmentScoped && $selectedDepartment === '') {
+    $records = [];
+    $monthlyRecords = array_fill_keys(array_keys($monthlyRecords), []);
+    $monthlyExcuses = [];
+}
+
+$employees = $isDepartmentScoped
+    ? array_values(array_filter(all_employees(), static fn (array $employee): bool => ($employee['department_id'] ?? '') === $selectedDepartment && $selectedDepartment !== ''))
+    : all_employees();
+
+if ($isDepartmentScoped) {
+    $departments = $selectedDepartmentData !== null ? [$selectedDepartmentData] : [];
+}
+
 $geofenceSettings = read_geofence_settings();
 $totalWorkedMinutes = 0;
 $completeWorkedMinutes = 0;

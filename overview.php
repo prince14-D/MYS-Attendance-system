@@ -10,6 +10,13 @@ $extraHeadHtml = '<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/
 require_once __DIR__ . '/admin_shell_start.php';
 $completionRate = count($records) > 0 ? (int) round(($completeRecords / count($records)) * 100) : 0;
 $primaryDashboardLink = $adminPageLinks['attendance_log'] ?? ($adminPageLinks['monthly_report'] ?? ($adminPageLinks['tally_sheet'] ?? null));
+$staffTypeCounts = ['Employee' => 0, 'Contractor' => 0, 'Volunteer' => 0];
+foreach ($employees as $employee) {
+	$staffType = (string) ($employee['employee_type'] ?? 'Employee');
+	if (isset($staffTypeCounts[$staffType])) {
+		$staffTypeCounts[$staffType]++;
+	}
+}
 $recentActivity = [];
 foreach (read_attendance() as $attendanceDate => $dayRecords) {
 	foreach ($dayRecords as $record) {
@@ -29,7 +36,7 @@ $recentActivity = array_slice($recentActivity, 0, 6);
 	</div>
 	<div class="overview-hero-meta">
 		<div class="overview-hero-chip">Date: <?= h(date('M j, Y', strtotime($selectedDate))) ?></div>
-		<div class="overview-hero-chip">Department: <?= h($activeFilterLabel) ?></div>
+		<div class="overview-hero-chip">Department: <?= h($activeFilterLabel) ?><?= $isDepartmentScoped ? ' (locked to your account)' : '' ?></div>
 		<div class="overview-hero-progress"><div><span>Daily completion</span><strong><?= $completionRate ?>%</strong></div><div class="overview-progress-track"><span style="width: <?= $completionRate ?>%"></span></div><small><?= $completeRecords ?> complete of <?= count($records) ?> records</small></div>
 	</div>
 </div>
@@ -60,6 +67,29 @@ $recentActivity = array_slice($recentActivity, 0, 6);
 		<span>Total Worked</span>
 		<strong><?= h($formatWorkedMinutes($totalWorkedMinutes)) ?></strong>
 		<small>Across today's records</small>
+	</div>
+</div>
+
+<div class="stats-grid modern-stats-grid live-staff-stats-grid" aria-label="Staff headcount summary">
+	<div class="stat-card modern-stat-card stat-total-staff" id="statTotalStaff">
+		<span><span class="live-dot" aria-hidden="true"></span> Total Staff</span>
+		<strong data-live-value="total_staff"><?= array_sum($staffTypeCounts) ?></strong>
+		<small><?= h($activeFilterLabel) ?></small>
+	</div>
+	<div class="stat-card modern-stat-card stat-employees">
+		<span>Total Employees</span>
+		<strong data-live-value="total_employees"><?= $staffTypeCounts['Employee'] ?></strong>
+		<small>Full-time / permanent staff</small>
+	</div>
+	<div class="stat-card modern-stat-card stat-contractors">
+		<span>Total Contractors</span>
+		<strong data-live-value="total_contractors"><?= $staffTypeCounts['Contractor'] ?></strong>
+		<small>Contract-based staff</small>
+	</div>
+	<div class="stat-card modern-stat-card stat-volunteers">
+		<span>Total Volunteers</span>
+		<strong data-live-value="total_volunteers"><?= $staffTypeCounts['Volunteer'] ?></strong>
+		<small>Volunteer staff</small>
 	</div>
 </div>
 
@@ -102,6 +132,22 @@ $recentActivity = array_slice($recentActivity, 0, 6);
 	</div>
 	<section class="admin-box live-activity-card mt-4"><div class="section-heading"><div><span class="eyebrow">Live Attendance</span><h2>Recent Clock Activity</h2></div><p class="muted"><span class="live-dot"></span> Refreshes every 15 seconds</p></div><div class="live-activity-list" id="liveActivityList"><?php foreach ($recentActivity as $activity): ?><div class="live-activity-row"><div class="live-activity-avatar"><?= h(strtoupper(substr($activity['employee_name'], 0, 1))) ?></div><div class="live-activity-person"><strong><?= h($activity['employee_name']) ?></strong><small><?= h($activity['department_name']) ?> · <?= h($activity['date']) ?></small></div><div class="live-activity-time"><span class="<?= $activity['clock_out'] !== '' ? 'clock-out' : 'clock-in' ?>"><?= $activity['clock_out'] !== '' ? 'Clocked out' : 'Clocked in' ?></span><strong><?= h($activity['clock_out'] !== '' ? $activity['clock_out'] : $activity['clock_in']) ?></strong></div></div><?php endforeach; ?><?php if (count($recentActivity) === 0): ?><div class="empty">No clock activity recorded yet.</div><?php endif; ?></div></section>
 </div>
-<script>(() => { const list = document.getElementById('liveActivityList'); if (!list) return; const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); const refresh = async () => { try { const response = await fetch('recent_activity_live.php', {cache:'no-store'}); const rows = await response.json(); list.innerHTML = rows.length ? rows.map(item => { const out = item.clock_out !== ''; return `<div class="live-activity-row"><div class="live-activity-avatar">${escapeHtml(item.employee_name.charAt(0).toUpperCase())}</div><div class="live-activity-person"><strong>${escapeHtml(item.employee_name)}</strong><small>${escapeHtml(item.department_name)} · ${escapeHtml(item.date)}</small></div><div class="live-activity-time"><span class="${out ? 'clock-out' : 'clock-in'}">${out ? 'Clocked out' : 'Clocked in'}</span><strong>${escapeHtml(out ? item.clock_out : item.clock_in)}</strong></div></div>`; }).join('') : '<div class="empty">No clock activity recorded yet.</div>'; } catch (_) {} }; setInterval(refresh, 15000); })();</script>
+<script>(() => { const list = document.getElementById('liveActivityList'); if (!list) return; const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); const refresh = async () => { try { const response = await fetch('recent_activity_live.php', {cache:'no-store'}); const rows = await response.json(); list.innerHTML = rows.length ? rows.map(item => { const out = item.clock_out !== ''; return `<div class="live-activity-row"><div class="live-activity-avatar">${escapeHtml(item.employee_name.charAt(0).toUpperCase())}</div><div class="live-activity-person"><strong>${escapeHtml(item.employee_name)}</strong><small>${escapeHtml(item.department_name)} · ${escapeHtml(item.date)}</small></div><div class="live-activity-time"><span class="${out ? 'clock-out' : 'clock-in'}">${out ? 'Clocked out' : 'Clocked in'}</span><strong>${escapeHtml(out ? item.clock_out : item.clock_in)}</strong></div></div>`; }).join('') : '<div class="empty">No clock activity recorded yet.</div>'; } catch (_) {} }; setInterval(refresh, 15000); })();
+(() => {
+	const valueNodes = document.querySelectorAll('[data-live-value]');
+	if (valueNodes.length === 0) return;
+	const refreshStats = async () => {
+		try {
+			const response = await fetch('dashboard_stats_live.php', { cache: 'no-store' });
+			const stats = await response.json();
+			valueNodes.forEach((node) => {
+				const key = node.dataset.liveValue;
+				if (key in stats) node.textContent = stats[key];
+			});
+		} catch (_) {}
+	};
+	setInterval(refreshStats, 10000);
+})();
+</script>
 <?php
 require_once __DIR__ . '/admin_shell_end.php';

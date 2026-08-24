@@ -187,6 +187,82 @@ require_once __DIR__ . '/admin_shell_start.php';
 			</div>
 		<?php endif; ?>
 	</section>
+
+	<section class="monthly-print-report" aria-label="Printable monthly attendance report">
+		<div class="print-report-header">
+			<div>
+				<span class="eyebrow">Printable Monthly Record</span>
+				<h2><?= h(APP_NAME) ?></h2>
+				<p>Attendance summary for <?= h(date('F Y', strtotime($selectedMonth . '-01'))) ?> <?= $selectedDepartment !== '' ? '- ' . h($activeFilterLabel) : '' ?></p>
+			</div>
+			<div class="print-report-meta">
+				<div>
+					<span>Month</span>
+					<strong><?= h(date('F Y', strtotime($selectedMonth . '-01'))) ?></strong>
+				</div>
+				<div>
+					<span>Department</span>
+					<strong><?= h($activeFilterLabel) ?></strong>
+				</div>
+				<div>
+					<span>Total Records</span>
+					<strong><?= (int) $monthlyTotals['records'] ?></strong>
+				</div>
+			</div>
+		</div>
+
+		<div class="monthly-print-summary">
+			<div class="monthly-print-stat">
+				<span>Total</span>
+				<strong><?= (int) $monthlyTotals['records'] ?></strong>
+			</div>
+			<div class="monthly-print-stat">
+				<span>Present</span>
+				<strong><?= (int) $monthlyTotals['complete'] ?></strong>
+			</div>
+			<div class="monthly-print-stat">
+				<span>Late</span>
+				<strong><?= (int) $monthlyTotals['late'] ?></strong>
+			</div>
+			<div class="monthly-print-stat">
+				<span>Incomplete</span>
+				<strong><?= (int) $monthlyTotals['incomplete'] ?></strong>
+			</div>
+			<div class="monthly-print-stat">
+				<span>Worked</span>
+				<strong><?= h($formatMinutes($monthlyAverageWorked)) ?></strong>
+			</div>
+		</div>
+
+		<?php if (count($monthlyReportDays) === 0): ?>
+			<div class="empty">No monthly attendance data found for this month.</div>
+		<?php else: ?>
+			<table class="print-table monthly-print-table">
+				<thead>
+					<tr>
+						<th>Date</th>
+						<th>Total</th>
+						<th>Present</th>
+						<th>Late</th>
+						<th>Incomplete</th>
+						<th>Worked Time</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ($monthlyReportDays as $day): ?>
+						<tr>
+							<td><?= h($day['date']) ?></td>
+							<td><?= $day['total'] ?></td>
+							<td><?= $day['complete'] ?></td>
+							<td><?= $day['late'] ?></td>
+							<td><?= $day['incomplete'] ?></td>
+							<td><?= h($formatMinutes($day['worked_minutes'])) ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		<?php endif; ?>
+	</section>
 </div>
 <?php
 $liveChartLabels = [];

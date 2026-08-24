@@ -9,16 +9,7 @@ const ADMIN_PASSWORD = 'admin123';
 const STORAGE_DIR = __DIR__ . '/storage';
 const SESSION_DIR = STORAGE_DIR . '/sessions';
 const PHOTOS_DIR = STORAGE_DIR . '/photos';
-const ATTENDANCE_FILE = STORAGE_DIR . '/attendance.json';
-const EMPLOYEES_FILE = STORAGE_DIR . '/employees.json';
-const DEPARTMENTS_FILE = STORAGE_DIR . '/departments.json';
-const GEOFENCE_FILE = STORAGE_DIR . '/geofence.json';
-const EXCUSES_FILE = STORAGE_DIR . '/excuses.json';
-const LETTERS_FILE = STORAGE_DIR . '/letters.json';
-const EMPLOYEE_DOCUMENTS_FILE = STORAGE_DIR . '/employee_documents.json';
 const EMPLOYEE_DOCUMENTS_DIR = STORAGE_DIR . '/employee_documents';
-const DEVICES_FILE = STORAGE_DIR . '/devices.json';
-const USERS_FILE = STORAGE_DIR . '/users.json';
 const SHIFT_START_TIME = '09:00:00';
 const SHIFT_END_TIME = '17:00:00';
 const LATE_GRACE_MINUTES = 10;
@@ -40,51 +31,20 @@ if (!is_dir(EMPLOYEE_DOCUMENTS_DIR)) {
     mkdir(EMPLOYEE_DOCUMENTS_DIR, 0775, true);
 }
 
-if (!file_exists(ATTENDANCE_FILE)) {
-    file_put_contents(ATTENDANCE_FILE, json_encode([], JSON_PRETTY_PRINT));
+$mysqlConfigFile = __DIR__ . '/database/config.mysql.php';
+
+if (!file_exists($mysqlConfigFile)) {
+    throw new RuntimeException(
+        'MySQL configuration missing. Copy database/config.mysql.php.example to ' .
+        'database/config.mysql.php, set your credentials, and import database/schema.sql.'
+    );
 }
 
-if (!file_exists(EMPLOYEES_FILE)) {
-    file_put_contents(EMPLOYEES_FILE, json_encode([], JSON_PRETTY_PRINT));
-}
+require_once $mysqlConfigFile;
 
-if (!file_exists(DEPARTMENTS_FILE)) {
-    file_put_contents(DEPARTMENTS_FILE, json_encode([], JSON_PRETTY_PRINT));
-}
-
-if (!file_exists(GEOFENCE_FILE)) {
-    file_put_contents(GEOFENCE_FILE, json_encode([
-        'enabled' => false,
-        'latitude' => null,
-        'longitude' => null,
-        'radius_meters' => 150,
-        'updated_at' => date('Y-m-d H:i:s'),
-    ], JSON_PRETTY_PRINT));
-}
-
-if (!file_exists(EXCUSES_FILE)) {
-    file_put_contents(EXCUSES_FILE, json_encode([], JSON_PRETTY_PRINT));
-}
-
-if (!file_exists(LETTERS_FILE)) {
-    file_put_contents(LETTERS_FILE, json_encode([], JSON_PRETTY_PRINT));
-}
-
-if (!file_exists(EMPLOYEE_DOCUMENTS_FILE)) {
-    file_put_contents(EMPLOYEE_DOCUMENTS_FILE, json_encode([], JSON_PRETTY_PRINT));
-}
-
-if (!file_exists(DEVICES_FILE)) {
-    file_put_contents(DEVICES_FILE, json_encode([], JSON_PRETTY_PRINT));
-}
-
-if (!file_exists(USERS_FILE)) {
-    file_put_contents(USERS_FILE, json_encode([[
-        'username' => ADMIN_USERNAME,
-        'password_hash' => password_hash(ADMIN_PASSWORD, PASSWORD_DEFAULT),
-        'role' => 'admin',
-        'created_at' => date('Y-m-d H:i:s'),
-    ]], JSON_PRETTY_PRINT));
+function db(): PDO
+{
+    return mysql_connection();
 }
 
 function h(string $value): string

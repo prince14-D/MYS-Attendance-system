@@ -116,6 +116,13 @@ require_once __DIR__ . '/admin_shell_start.php';
 				<label for="register_position">Position</label>
 				<input id="register_position" name="position" type="text" placeholder="Example: Program Officer" autocomplete="organization-title">
 
+				<label for="register_employee_type">Employee Type</label>
+				<select id="register_employee_type" name="employee_type">
+					<option value="Employee" selected>Employee</option>
+					<option value="Contractor">Contractor</option>
+					<option value="Volunteer">Volunteer</option>
+				</select>
+
 				<label for="register_department_id">Department</label>
 				<select id="register_department_id" name="department_id" required>
 					<option value="">Select Department</option>

@@ -9,7 +9,7 @@ const MYSQL_HOST = '127.0.0.1';
 const MYSQL_PORT = '3306';
 const MYSQL_DATABASE = 'mys_attendance';
 const MYSQL_USERNAME = 'mys_attendance_user';
-const MYSQL_PASSWORD = 'replace-with-a-strong-password';
+const MYSQL_PASSWORD = 'Prince@2026Secure!';
 
 function mysql_connection(): PDO
 {
