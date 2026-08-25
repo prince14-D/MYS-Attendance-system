@@ -29,53 +29,94 @@ function employee_pdf_text(string $text, int $x, int $y, int $size = 10, string 
     return "BT\n/" . $font . ' ' . $size . " Tf\n" . $x . ' ' . $y . " Td\n(" . employee_pdf_escape($text) . ") Tj\nET\n";
 }
 
+function employee_pdf_rect(int $x, int $y, int $width, int $height, string $fill): string
+{
+    return $fill . "\n" . $x . ' ' . $y . ' ' . $width . ' ' . $height . " re f\n";
+}
+
+function employee_pdf_line(int $x1, int $y1, int $x2, int $y2): string
+{
+    return "0.82 0.86 0.92 RG\n" . $x1 . ' ' . $y1 . ' m ' . $x2 . ' ' . $y2 . " l S\n";
+}
+
+function employee_pdf_fit_text(string $text, int $x, int $y, int $maxWidth, int $size = 10, string $font = 'F1'): string
+{
+    $text = trim($text);
+    while ($size > 7 && strlen($text) * $size * 0.52 > $maxWidth) $size--;
+    if (strlen($text) * $size * 0.52 > $maxWidth) {
+        $maxChars = max(1, (int) floor($maxWidth / ($size * 0.52)) - 3);
+        $text = substr($text, 0, $maxChars) . '...';
+    }
+    return employee_pdf_text($text, $x, $y, $size, $font);
+}
+
 function employee_build_pdf(array $employee, array $rows, string $employeeNumber): string
 {
-    $headerY = 790;
-    $content = "0 0 0 rg\n";
-    $content .= employee_pdf_text(APP_NAME, 50, $headerY, 18, 'F2');
-    $content .= employee_pdf_text('Employee Attendance Record', 50, $headerY - 26, 14, 'F2');
-    $content .= employee_pdf_text('Employee: ' . ($employee['employee_name'] ?? ''), 50, $headerY - 52, 11);
-    $content .= employee_pdf_text('Employee Number: ' . $employeeNumber, 50, $headerY - 70, 11);
-    $content .= employee_pdf_text('Department: ' . ($employee['department_name'] ?? 'Unassigned'), 50, $headerY - 88, 11);
-    $content .= "0.85 0.9 0.96 rg\n50 120 495 22 re f\n0 0 0 rg\n";
-    $content .= employee_pdf_text('Date', 70, 130, 10, 'F2');
-    $content .= employee_pdf_text('Clock In', 190, 130, 10, 'F2');
-    $content .= employee_pdf_text('Clock Out', 300, 130, 10, 'F2');
-    $content .= employee_pdf_text('Worked Hours', 410, 130, 10, 'F2');
-    $content .= employee_pdf_text('Status', 500, 130, 10, 'F2');
-
-    $y = 100;
+    $complete = count(array_filter($rows, static fn (array $record): bool => ($record['status'] ?? '') === 'Complete'));
+    $totalMinutes = 0;
     foreach ($rows as $record) {
-        $y -= 22;
-        if ($y < 60) {
-            break;
+        $worked = worked_hours($record);
+        if ($worked !== '') {
+            [$hours, $minutes] = array_map('intval', explode(':', $worked));
+            $totalMinutes += ($hours * 60) + $minutes;
+        }
+    }
+    $pageSize = 25;
+    $pageCount = max(1, (int) ceil(count($rows) / $pageSize));
+    $contents = [];
+
+    for ($page = 0; $page < $pageCount; $page++) {
+        $content = employee_pdf_rect(0, 0, 595, 842, '0.97 0.98 0.99 rg');
+        $content .= employee_pdf_rect(0, 770, 595, 72, '0.07 0.25 0.48 rg');
+        $content .= employee_pdf_rect(0, 770, 595, 6, '0.78 0.12 0.20 rg');
+        $content .= "1 1 1 rg\n";
+        $content .= employee_pdf_text(APP_NAME, 42, 814, 15, 'F2');
+        $content .= employee_pdf_text('EMPLOYEE ATTENDANCE', 42, 792, 10, 'F2');
+        $content .= employee_pdf_text('Page ' . ($page + 1) . ' of ' . $pageCount, 480, 804, 9, 'F2');
+
+        if ($page === 0) {
+            $content .= employee_pdf_rect(36, 682, 523, 68, '1 1 1 rg');
+            $content .= "0.07 0.25 0.48 rg\n" . employee_pdf_text('Employee profile', 52, 730, 9, 'F2');
+            $content .= employee_pdf_fit_text((string) ($employee['employee_name'] ?? ''), 52, 708, 250, 16, 'F2');
+            $content .= employee_pdf_text('ID: ' . $employeeNumber, 52, 690, 9);
+            $content .= "0.07 0.25 0.48 rg\n" . employee_pdf_text('Department', 330, 730, 9, 'F2');
+            $content .= employee_pdf_fit_text((string) ($employee['department_name'] ?? 'Unassigned'), 330, 708, 205, 12, 'F2');
+            $content .= employee_pdf_fit_text((string) ($employee['position'] ?? 'Position not recorded'), 330, 690, 205, 9);
+            foreach ([['Records', (string) count($rows)], ['Complete', (string) $complete], ['Hours logged', sprintf('%02d:%02d', intdiv($totalMinutes, 60), $totalMinutes % 60)]] as $index => [$label, $value]) {
+                $x = 36 + ($index * 176);
+                $content .= employee_pdf_rect($x, 620, 163, 48, $index === 1 ? '0.88 0.96 0.92 rg' : '0.91 0.94 0.98 rg');
+                $content .= "0.07 0.25 0.48 rg\n" . employee_pdf_text($label, $x + 12, 650, 8, 'F2');
+                $content .= employee_pdf_text($value, $x + 12, 631, 15, 'F2');
+            }
         }
 
-        $date = (string) ($record['date'] ?? '');
-        $clockIn = (string) (($record['clock_in'] ?? '') ?: '-');
-        $clockOut = (string) (($record['clock_out'] ?? '') ?: '-');
-        $workedHours = (string) (worked_hours($record) ?: '-');
-        $status = (string) ($record['status'] ?? 'Incomplete');
-
-        $content .= employee_pdf_text($date, 70, $y, 9);
-        $content .= employee_pdf_text($clockIn, 190, $y, 9);
-        $content .= employee_pdf_text($clockOut, 300, $y, 9);
-        $content .= employee_pdf_text($workedHours, 410, $y, 9);
-        $content .= employee_pdf_text($status, 500, $y, 9);
+        $tableTop = $page === 0 ? 590 : 720;
+        $content .= employee_pdf_rect(36, $tableTop, 523, 26, '0.07 0.25 0.48 rg');
+        foreach ([['Date', 50], ['Clock in', 170], ['Clock out', 270], ['Worked', 370], ['Status', 465]] as [$label, $x]) $content .= employee_pdf_text($label, $x, $tableTop + 9, 9, 'F2');
+        $y = $tableTop - 22;
+        foreach (array_slice($rows, $page * $pageSize, $pageSize) as $index => $record) {
+            if ($index % 2 === 0) $content .= employee_pdf_rect(36, $y - 7, 523, 25, '0.94 0.96 0.98 rg');
+            $content .= "0.12 0.15 0.20 rg\n";
+            $content .= employee_pdf_fit_text((string) ($record['date'] ?? '-'), 50, $y, 100, 9);
+            $content .= employee_pdf_fit_text((string) (($record['clock_in'] ?? '') ?: '-'), 170, $y, 80, 9);
+            $content .= employee_pdf_fit_text((string) (($record['clock_out'] ?? '') ?: '-'), 270, $y, 80, 9);
+            $content .= employee_pdf_fit_text((string) (worked_hours($record) ?: '-'), 370, $y, 70, 9);
+            $status = (string) ($record['status'] ?? 'Incomplete');
+            $content .= ($status === 'Complete' ? "0.03 0.45 0.26 rg\n" : "0.72 0.12 0.14 rg\n") . employee_pdf_text($status, 465, $y, 9, 'F2');
+            $content .= employee_pdf_line(36, $y - 10, 559, $y - 10);
+            $y -= 25;
+        }
+        if (count($rows) === 0) $content .= employee_pdf_text('No attendance records found.', 52, $tableTop - 48, 11, 'F2');
+        $content .= "0.35 0.4 0.48 rg\n" . employee_pdf_text('Generated ' . date('M j, Y H:i') . '  |  ' . APP_NAME, 36, 28, 8);
+        $contents[] = $content;
     }
 
-    if (count($rows) === 0) {
-        $content .= employee_pdf_text('No attendance records found.', 130, 140, 12, 'F2');
-    }
-
-    $objects = [
-        "<< /Type /Catalog /Pages 2 0 R >>",
-        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 4 0 R >> >> /Contents 5 0 R >>",
-        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        "<< /Length " . strlen($content) . " >>\nstream\n" . $content . "\nendstream"
-    ];
+    $objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [" . implode(' ', array_map(static fn (int $index): string => (string) ($index + 3) . ' 0 R', range(0, $pageCount - 1))) . "] /Count " . $pageCount . " >>"];
+    $fontObject = 3 + $pageCount;
+    $contentObjectStart = $fontObject + 1;
+    foreach ($contents as $index => $content) $objects[] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 " . $fontObject . " 0 R /F2 " . $fontObject . " 0 R >> >> /Contents " . ($contentObjectStart + $index) . " 0 R >>";
+    $objects[] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+    foreach ($contents as $content) $objects[] = "<< /Length " . strlen($content) . " >>\nstream\n" . $content . "\nendstream";
 
     $pdf = "%PDF-1.4\n";
     $offsets = [0];
