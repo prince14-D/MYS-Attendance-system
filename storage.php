@@ -2698,10 +2698,63 @@ function sync_offline_attendance(array $items): array
     return $results;
 }
 
+/**
+ * Single-date attendance rows via the indexed attendance_date column,
+ * instead of pulling the full history table (used by dashboard/live endpoints).
+ */
+function attendance_records_for_date(string $date): array
+{
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        return [];
+    }
+
+    $stmt = db()->prepare('SELECT * FROM attendance WHERE attendance_date = :attendance_date ORDER BY employee_number');
+    $stmt->execute(['attendance_date' => $date]);
+
+    $dayRecords = [];
+
+    foreach ($stmt->fetchAll() as $row) {
+        $dayRecords[(string) $row['employee_number']] = attendance_row_to_record($row);
+    }
+
+    return $dayRecords;
+}
+
+/**
+ * Most recently changed attendance rows (by updated_at) for dashboard "recent
+ * activity" feeds, avoiding a full-table read + in-PHP sort on every poll.
+ */
+function recent_attendance_activity(int $limit = 6): array
+{
+    $stmt = db()->prepare('SELECT * FROM attendance ORDER BY updated_at DESC LIMIT :limit');
+    $stmt->bindValue('limit', max(1, $limit), PDO::PARAM_INT);
+    $stmt->execute();
+
+    $activity = [];
+
+    foreach ($stmt->fetchAll() as $row) {
+        $record = attendance_row_to_record($row);
+        $time = $record['clock_out'] !== '' ? $record['clock_out'] : $record['clock_in'];
+
+        if ($time === '') {
+            continue;
+        }
+
+        $activity[] = [
+            'employee_name' => $record['employee_name'] !== '' ? $record['employee_name'] : $record['employee_number'],
+            'department_name' => $record['department_name'] !== '' ? $record['department_name'] : 'Unassigned',
+            'date' => $record['date'],
+            'clock_in' => $record['clock_in'],
+            'clock_out' => $record['clock_out'],
+        ];
+    }
+
+    return $activity;
+}
+
 function attendance_for_date(string $date, string $departmentId = ''): array
 {
-    $records = read_attendance();
-    $dayRecords = $records[$date] ?? [];
+    $dayRecords = attendance_records_for_date($date);
     $employees = read_employees();
     $departmentId = normalize_department_id($departmentId);
 

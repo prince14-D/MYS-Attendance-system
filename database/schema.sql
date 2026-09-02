@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS attendance (
     KEY idx_attendance_date (attendance_date),
     KEY idx_attendance_department (department_id),
     KEY idx_attendance_status (status),
+Longer-term / as data grows:
+7. If attendance history grows over years, consider archiving old rows (e.g., move records older than 1–2 years to an attendance_archive table) to keep the hot table small.    KEY idx_attendance_updated_at (updated_at),
     CONSTRAINT fk_attendance_employee FOREIGN KEY (employee_number)
         REFERENCES employees(employee_number) ON DELETE CASCADE
 ) ENGINE=InnoDB;

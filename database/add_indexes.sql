@@ -28,3 +28,12 @@ SET @sql := IF(@idx_exists = 0, 'ALTER TABLE employees ADD KEY idx_employees_typ
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+SET @idx_exists := (
+    SELECT COUNT(*) FROM information_schema.statistics
+    WHERE table_schema = DATABASE() AND table_name = 'attendance' AND index_name = 'idx_attendance_updated_at'
+);
+SET @sql := IF(@idx_exists = 0, 'ALTER TABLE attendance ADD KEY idx_attendance_updated_at (updated_at)', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

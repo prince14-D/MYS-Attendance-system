@@ -17,15 +17,7 @@ foreach ($employees as $employee) {
 		$staffTypeCounts[$staffType]++;
 	}
 }
-$recentActivity = [];
-foreach (read_attendance() as $attendanceDate => $dayRecords) {
-	foreach ($dayRecords as $record) {
-		$time = (string) (($record['clock_out'] ?? '') !== '' ? $record['clock_out'] : ($record['clock_in'] ?? ''));
-		if ($time !== '') $recentActivity[] = ['employee_name' => (string) ($record['employee_name'] ?? $record['employee_number'] ?? 'Employee'), 'department_name' => (string) ($record['department_name'] ?? 'Unassigned'), 'date' => (string) ($record['date'] ?? $attendanceDate), 'clock_in' => (string) ($record['clock_in'] ?? ''), 'clock_out' => (string) ($record['clock_out'] ?? ''), 'sort' => (string) ($record['date'] ?? $attendanceDate) . ' ' . $time];
-	}
-}
-usort($recentActivity, static fn (array $a, array $b): int => strcmp($b['sort'], $a['sort']));
-$recentActivity = array_slice($recentActivity, 0, 6);
+$recentActivity = recent_attendance_activity(6);
 ?>
 <div class="dashboard-hero panel modern-overview-hero professional-dashboard-hero">
 	<div class="dashboard-title">
