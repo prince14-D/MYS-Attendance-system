@@ -48,10 +48,39 @@ CREATE TABLE IF NOT EXISTS attendance (
     KEY idx_attendance_date (attendance_date),
     KEY idx_attendance_department (department_id),
     KEY idx_attendance_status (status),
-Longer-term / as data grows:
-7. If attendance history grows over years, consider archiving old rows (e.g., move records older than 1–2 years to an attendance_archive table) to keep the hot table small.    KEY idx_attendance_updated_at (updated_at),
+    KEY idx_attendance_updated_at (updated_at),
     CONSTRAINT fk_attendance_employee FOREIGN KEY (employee_number)
         REFERENCES employees(employee_number) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Cold storage for old attendance rows moved out of the hot `attendance`
+-- table by database/archive_old_attendance.php. No FK to employees so
+-- history survives employee deletion; not indexed as heavily since it's
+-- read rarely (only when someone explicitly needs old records).
+CREATE TABLE IF NOT EXISTS attendance_archive (
+    attendance_id BIGINT UNSIGNED PRIMARY KEY,
+    employee_number VARCHAR(50) NOT NULL,
+    employee_name VARCHAR(150) NOT NULL DEFAULT '',
+    position VARCHAR(150) NOT NULL DEFAULT '',
+    department_id VARCHAR(100) NULL,
+    department_name VARCHAR(150) NOT NULL DEFAULT 'Unassigned',
+    attendance_date DATE NOT NULL,
+    clock_in TIME NULL,
+    clock_out TIME NULL,
+    clock_in_photo VARCHAR(255) NOT NULL DEFAULT '',
+    clock_in_latitude DECIMAL(10,7) NULL,
+    clock_in_longitude DECIMAL(10,7) NULL,
+    clock_in_accuracy_m DECIMAL(10,2) NULL,
+    status ENUM('Complete', 'Incomplete') NOT NULL DEFAULT 'Incomplete',
+    late TINYINT(1) NOT NULL DEFAULT 0,
+    late_minutes INT UNSIGNED NOT NULL DEFAULT 0,
+    early_out TINYINT(1) NOT NULL DEFAULT 0,
+    early_out_minutes INT UNSIGNED NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    archived_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_attendance_archive_date (attendance_date),
+    KEY idx_attendance_archive_employee (employee_number)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS excuses (

@@ -37,3 +37,31 @@ SET @sql := IF(@idx_exists = 0, 'ALTER TABLE attendance ADD KEY idx_attendance_u
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- Cold storage table for old attendance rows; see database/archive_old_attendance.php.
+CREATE TABLE IF NOT EXISTS attendance_archive (
+    attendance_id BIGINT UNSIGNED PRIMARY KEY,
+    employee_number VARCHAR(50) NOT NULL,
+    employee_name VARCHAR(150) NOT NULL DEFAULT '',
+    position VARCHAR(150) NOT NULL DEFAULT '',
+    department_id VARCHAR(100) NULL,
+    department_name VARCHAR(150) NOT NULL DEFAULT 'Unassigned',
+    attendance_date DATE NOT NULL,
+    clock_in TIME NULL,
+    clock_out TIME NULL,
+    clock_in_photo VARCHAR(255) NOT NULL DEFAULT '',
+    clock_in_latitude DECIMAL(10,7) NULL,
+    clock_in_longitude DECIMAL(10,7) NULL,
+    clock_in_accuracy_m DECIMAL(10,2) NULL,
+    status ENUM('Complete', 'Incomplete') NOT NULL DEFAULT 'Incomplete',
+    late TINYINT(1) NOT NULL DEFAULT 0,
+    late_minutes INT UNSIGNED NOT NULL DEFAULT 0,
+    early_out TINYINT(1) NOT NULL DEFAULT 0,
+    early_out_minutes INT UNSIGNED NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    archived_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_attendance_archive_date (attendance_date),
+    KEY idx_attendance_archive_employee (employee_number)
+) ENGINE=InnoDB;
+
