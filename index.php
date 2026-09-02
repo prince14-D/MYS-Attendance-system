@@ -5,8 +5,10 @@ require_once __DIR__ . '/storage.php';
 
 $result = null;
 $employeeDirectory = all_employees();
-$employeeClockStatusDirectory = [];
 $geofencePublicSettings = geofence_public_settings();
+$today = date('Y-m-d');
+$attendanceStatusToday = attendance_status_map_for_date($today);
+$employeeClockStatusDirectory = [];
 
 foreach ($employeeDirectory as $employee) {
     $employeeNumber = (string) ($employee['employee_number'] ?? '');
@@ -15,7 +17,8 @@ foreach ($employeeDirectory as $employee) {
         continue;
     }
 
-    $employeeClockStatusDirectory[$employeeNumber] = employee_clock_in_status($employeeNumber);
+    $employeeClockStatusDirectory[$employeeNumber] = $attendanceStatusToday[$employeeNumber]
+        ?? ['clocked_in' => false, 'clocked_out' => false, 'date' => $today];
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
@@ -226,9 +229,84 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         const deviceIdKey = 'mys_attendance_device_id';
         const deviceNameKey = 'mys_attendance_device_name';
         const onlineRequestTimeoutMs = 12000;
+        const employeeDirectoryRefreshMs = 60000;
+        const employeeLookupRetryMs = 15000;
+        const lastLookupAttemptByNumber = {};
         let stream = null;
         let pendingInstallPrompt = null;
         let syncNoticeTimer = null;
+
+        function mergeEmployeeIntoDirectory(employee) {
+            const employeeNumber = String(employee?.employee_number || '').toUpperCase();
+
+            if (employeeNumber === '') {
+                return;
+            }
+
+            employeesByNumber[employeeNumber] = employee;
+        }
+
+        // Periodically refreshes the roster and today's clock status so newly
+        // registered employees and cross-device clock actions show up without a page reload.
+        async function refreshEmployeeDirectory() {
+            if (!navigator.onLine) {
+                return;
+            }
+
+            try {
+                const response = await fetch('employee_directory_feed.php', { cache: 'no-store' });
+
+                if (!response.ok) {
+                    return;
+                }
+
+                const data = await response.json();
+                (data.employees || []).forEach(mergeEmployeeIntoDirectory);
+                Object.assign(employeeClockStatusByNumber, data.status || {});
+                syncActionState();
+            } catch (error) {
+                // Ignore network failures; the next interval will retry.
+            }
+        }
+
+        // On-demand fallback: if a typed employee number isn't in the locally
+        // cached directory yet, check the database directly instead of waiting for the next auto-refresh.
+        async function lookupEmployeeIfMissing(employeeNumber) {
+            if (employeeNumber === '' || employeesByNumber[employeeNumber] || !navigator.onLine) {
+                return;
+            }
+
+            const lastAttempt = lastLookupAttemptByNumber[employeeNumber] || 0;
+
+            if (Date.now() - lastAttempt < employeeLookupRetryMs) {
+                return;
+            }
+
+            lastLookupAttemptByNumber[employeeNumber] = Date.now();
+
+            try {
+                const response = await fetch(`employee_lookup.php?employee_number=${encodeURIComponent(employeeNumber)}`, { cache: 'no-store' });
+
+                if (!response.ok) {
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (!data.found) {
+                    return;
+                }
+
+                mergeEmployeeIntoDirectory({
+                    employee_number: employeeNumber,
+                    employee_name: data.name || '',
+                    department_name: data.department || 'Unassigned'
+                });
+                syncActionState();
+            } catch (error) {
+                // Ignore network failures; will retry after the retry interval.
+            }
+        }
 
         async function requestBackgroundSync() {
             if (!('serviceWorker' in navigator) || !('SyncManager' in window)) {
@@ -313,6 +391,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     disableClockOut: true,
                     hint: 'This employee number is not registered.'
                 });
+                lookupEmployeeIfMissing(employeeNumber);
                 return;
             }
 
@@ -356,6 +435,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         refreshClock();
         setInterval(refreshClock, 1000);
+        setInterval(refreshEmployeeDirectory, employeeDirectoryRefreshMs);
 
         const deviceId = getOrCreateDeviceId();
         if (deviceIdField) {
@@ -986,6 +1066,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             openCamera();
         }
 
+        // Steps quality down until the JPEG data URL fits under targetBytes, or minQuality is reached.
+        function compressPhotoToTargetSize(canvas, targetBytes, startQuality, minQuality) {
+            let quality = startQuality;
+            let dataUrl = canvas.toDataURL('image/jpeg', quality);
+
+            while (dataUrl.length * 0.75 > targetBytes && quality > minQuality) {
+                quality = Math.max(minQuality, quality - 0.1);
+                dataUrl = canvas.toDataURL('image/jpeg', quality);
+            }
+
+            return dataUrl;
+        }
+
         employeeInput?.addEventListener('input', () => {
             syncActionState();
         });
@@ -1004,11 +1097,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             const size = Math.min(cameraStream.videoWidth, cameraStream.videoHeight);
             const sx = (cameraStream.videoWidth - size) / 2;
             const sy = (cameraStream.videoHeight - size) / 2;
-            photoCanvas.width = 640;
-            photoCanvas.height = 640;
-            photoCanvas.getContext('2d').drawImage(cameraStream, sx, sy, size, size, 0, 0, 640, 640);
+            const dimension = 480;
+            photoCanvas.width = dimension;
+            photoCanvas.height = dimension;
+            photoCanvas.getContext('2d').drawImage(cameraStream, sx, sy, size, size, 0, 0, dimension, dimension);
 
-            const photoData = photoCanvas.toDataURL('image/jpeg', 0.82);
+            const photoData = compressPhotoToTargetSize(photoCanvas, 60 * 1024, 0.75, 0.4);
             photoInput.value = photoData;
             photoPreview.src = photoData;
             photoPreview.hidden = false;

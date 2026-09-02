@@ -2804,12 +2804,39 @@ function employee_clock_in_status(string $employeeNumber, ?string $date = null):
         return ['clocked_in' => false, 'clocked_out' => false, 'date' => $date];
     }
 
-    $records = read_attendance();
-    $record = $records[$date][$employeeNumber] ?? null;
+    $stmt = db()->prepare('SELECT clock_in, clock_out FROM attendance WHERE employee_number = :employee_number AND attendance_date = :attendance_date');
+    $stmt->execute(['employee_number' => $employeeNumber, 'attendance_date' => $date]);
+    $row = $stmt->fetch();
 
     return [
-        'clocked_in' => $record !== null && ($record['clock_in'] ?? '') !== '',
-        'clocked_out' => $record !== null && ($record['clock_out'] ?? '') !== '',
+        'clocked_in' => $row !== false && ($row['clock_in'] ?? '') !== '' && $row['clock_in'] !== null,
+        'clocked_out' => $row !== false && ($row['clock_out'] ?? '') !== '' && $row['clock_out'] !== null,
         'date' => $date,
     ];
+}
+
+/**
+ * Bulk status lookup for every employee on a given date in a single indexed
+ * query, instead of one full-table read per employee (used by index.php).
+ */
+function attendance_status_map_for_date(string $date): array
+{
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        return [];
+    }
+
+    $stmt = db()->prepare('SELECT employee_number, clock_in, clock_out FROM attendance WHERE attendance_date = :attendance_date');
+    $stmt->execute(['attendance_date' => $date]);
+
+    $statusByEmployee = [];
+
+    foreach ($stmt->fetchAll() as $row) {
+        $statusByEmployee[(string) $row['employee_number']] = [
+            'clocked_in' => ($row['clock_in'] ?? '') !== '' && $row['clock_in'] !== null,
+            'clocked_out' => ($row['clock_out'] ?? '') !== '' && $row['clock_out'] !== null,
+            'date' => $date,
+        ];
+    }
+
+    return $statusByEmployee;
 }

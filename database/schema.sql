@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS employees (
     department_id VARCHAR(100) NULL,
     registered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_employees_type (employee_type),
     CONSTRAINT fk_employees_department FOREIGN KEY (department_id)
         REFERENCES departments(department_id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
@@ -45,6 +46,8 @@ CREATE TABLE IF NOT EXISTS attendance (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_attendance_employee_date (employee_number, attendance_date),
     KEY idx_attendance_date (attendance_date),
+    KEY idx_attendance_department (department_id),
+    KEY idx_attendance_status (status),
     CONSTRAINT fk_attendance_employee FOREIGN KEY (employee_number)
         REFERENCES employees(employee_number) ON DELETE CASCADE
 ) ENGINE=InnoDB;
