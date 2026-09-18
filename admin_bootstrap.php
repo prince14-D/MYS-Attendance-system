@@ -128,6 +128,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     } elseif ($adminAction === 'issue_employee_letter') {
         require_roles(['admin', 'hr', 'supervisor']);
         $registrationResult = create_letter($_POST, current_username());
+    } elseif ($adminAction === 'create_document_dispatch') {
+        require_roles(['admin', 'hr', 'supervisor']);
+        $registrationResult = create_document_dispatch($_POST, $_FILES['dispatch_document'] ?? [], current_username());
+    } elseif ($adminAction === 'delete_document_dispatch') {
+        require_roles(['admin', 'hr']);
+        $registrationResult = delete_document_dispatch($_POST['dispatch_id'] ?? '');
     }
 }
 
@@ -168,7 +174,9 @@ $allowedAdminPages = [
     'monthly_report',
     'excuse_form',
     'employee_letters',
+    'document_dispatch',
     'tally_sheet',
+    'payroll_attendance',
     'employee_profiles',
     'user_management',
 ];
@@ -190,7 +198,9 @@ $adminPageLinks = [
     'monthly_report' => ['label' => 'Monthly Report', 'href' => 'monthly_report.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
     'excuse_form' => ['label' => 'Employee Excuse Form', 'href' => 'excuse_form.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
     'employee_letters' => ['label' => 'Employee Letters', 'href' => 'employee_letters.php'],
+    'document_dispatch' => ['label' => 'Document Dispatch Register', 'href' => 'document_dispatch.php'],
     'tally_sheet' => ['label' => 'Attendance Tally Sheet', 'href' => 'tally_sheet.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
+    'payroll_attendance' => ['label' => 'Payroll Attendance', 'href' => 'payroll_attendance.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
     'employee_profiles' => ['label' => 'Employee Profiles', 'href' => 'employee_profiles.php'],
     'user_management' => ['label' => 'User Management', 'href' => 'user_management.php'],
 ];
@@ -201,7 +211,9 @@ $pageRoles = [
     'create_department' => ['admin'], 'backup_restore' => ['admin'], 'geofence' => ['admin'],
     'monthly_report' => ['admin', 'hr', 'viewer'], 'excuse_form' => ['admin', 'hr', 'supervisor'],
     'employee_letters' => ['admin', 'hr', 'supervisor'],
+    'document_dispatch' => ['admin', 'hr', 'supervisor'],
     'tally_sheet' => ['admin', 'supervisor', 'viewer'], 'employee_profiles' => ['admin', 'hr'], 'user_management' => ['admin'],
+    'payroll_attendance' => ['admin', 'hr', 'viewer'],
 ];
 require_roles($pageRoles[$activePage] ?? ['admin']);
 $adminPageLinks = array_filter($adminPageLinks, static fn (string $key): bool => in_array(current_user_role(), $pageRoles[$key] ?? [], true), ARRAY_FILTER_USE_KEY);
