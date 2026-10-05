@@ -10,6 +10,7 @@ const STORAGE_DIR = __DIR__ . '/storage';
 const SESSION_DIR = STORAGE_DIR . '/sessions';
 const PHOTOS_DIR = STORAGE_DIR . '/photos';
 const EMPLOYEE_DOCUMENTS_DIR = STORAGE_DIR . '/employee_documents';
+const DISPATCH_DOCUMENTS_DIR = STORAGE_DIR . '/dispatch_documents';
 const SHIFT_START_TIME = '09:00:00';
 const SHIFT_END_TIME = '17:00:00';
 const LATE_GRACE_MINUTES = 10;
@@ -29,6 +30,10 @@ if (!is_dir(PHOTOS_DIR)) {
 
 if (!is_dir(EMPLOYEE_DOCUMENTS_DIR)) {
     mkdir(EMPLOYEE_DOCUMENTS_DIR, 0775, true);
+}
+
+if (!is_dir(DISPATCH_DOCUMENTS_DIR)) {
+    mkdir(DISPATCH_DOCUMENTS_DIR, 0775, true);
 }
 
 $mysqlConfigFile = __DIR__ . '/database/config.mysql.php';

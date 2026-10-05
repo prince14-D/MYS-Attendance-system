@@ -452,6 +452,201 @@ function write_excuses(array $excuses): void
     }
 }
 
+function document_dispatch_row_to_record(array $row): array
+{
+    return [
+        'dispatch_id' => (string) $row['dispatch_id'],
+        'document_type' => (string) $row['document_type'],
+        'subject' => (string) $row['subject'],
+        'recipient_name' => (string) $row['recipient_name'],
+        'recipient_agency' => (string) $row['recipient_agency'],
+        'dispatched_by' => (string) $row['dispatched_by'],
+        'dispatched_at' => (string) $row['dispatched_at'],
+        'notes' => (string) $row['notes'],
+        'original_name' => (string) $row['original_name'],
+        'filename' => (string) $row['filename'],
+        'mime_type' => (string) $row['mime_type'],
+        'size' => (int) $row['size'],
+    ];
+}
+
+function read_document_dispatches(): array
+{
+    $rows = db()->query('SELECT * FROM document_dispatches ORDER BY dispatched_at DESC')->fetchAll();
+
+    return array_map('document_dispatch_row_to_record', $rows);
+}
+
+function write_document_dispatches(array $dispatches): void
+{
+    $pdo = db();
+    $pdo->beginTransaction();
+
+    try {
+        $pdo->exec('DELETE FROM document_dispatches');
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO document_dispatches (dispatch_id, document_type, subject, recipient_name, recipient_agency, dispatched_by, dispatched_at, notes, original_name, filename, mime_type, size)
+             VALUES (:dispatch_id, :document_type, :subject, :recipient_name, :recipient_agency, :dispatched_by, :dispatched_at, :notes, :original_name, :filename, :mime_type, :size)'
+        );
+
+        foreach ($dispatches as $dispatch) {
+            $stmt->execute([
+                'dispatch_id' => (string) $dispatch['dispatch_id'],
+                'document_type' => (string) ($dispatch['document_type'] ?? 'Letter'),
+                'subject' => (string) ($dispatch['subject'] ?? ''),
+                'recipient_name' => (string) ($dispatch['recipient_name'] ?? ''),
+                'recipient_agency' => (string) ($dispatch['recipient_agency'] ?? ''),
+                'dispatched_by' => (string) ($dispatch['dispatched_by'] ?? ''),
+                'dispatched_at' => (string) ($dispatch['dispatched_at'] ?? date('Y-m-d H:i:s')),
+                'notes' => (string) ($dispatch['notes'] ?? ''),
+                'original_name' => (string) ($dispatch['original_name'] ?? ''),
+                'filename' => (string) ($dispatch['filename'] ?? ''),
+                'mime_type' => (string) ($dispatch['mime_type'] ?? ''),
+                'size' => (int) ($dispatch['size'] ?? 0),
+            ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        $pdo->rollBack();
+        throw $exception;
+    }
+}
+
+function find_document_dispatch(string $dispatchId): ?array
+{
+    foreach (read_document_dispatches() as $dispatch) {
+        if (($dispatch['dispatch_id'] ?? '') === $dispatchId) {
+            return $dispatch;
+        }
+    }
+    return null;
+}
+
+function create_document_dispatch(array $input, array $upload, string $dispatchedBy): array
+{
+    $documentType = trim((string) ($input['document_type'] ?? ''));
+    $subject = trim((string) ($input['subject'] ?? ''));
+    $recipientName = normalize_person_name((string) ($input['recipient_name'] ?? ''));
+    $recipientAgency = trim((string) ($input['recipient_agency'] ?? ''));
+    $dispatchedBy = normalize_person_name((string) ($input['dispatched_by'] ?? $dispatchedBy));
+    if ($dispatchedBy === '') {
+        $dispatchedBy = normalize_person_name((string) ($input['dispatched_by'] ?? ''));
+    }
+    $dispatchedAtRaw = trim((string) ($input['dispatched_at'] ?? ''));
+    $notes = trim((string) ($input['notes'] ?? ''));
+
+    $allowedTypes = ['Letter', 'Report', 'Memo', 'Certificate', 'Agency Document', 'Other'];
+    if (!in_array($documentType, $allowedTypes, true)) {
+        return ['ok' => false, 'message' => 'Select a valid document type.'];
+    }
+
+    if ($subject === '') {
+        return ['ok' => false, 'message' => 'Enter a subject or description of the document.'];
+    }
+
+    if ($recipientName === '' && $recipientAgency === '') {
+        return ['ok' => false, 'message' => 'Enter who or which agency received the document.'];
+    }
+
+    if ($dispatchedBy === '') {
+        return ['ok' => false, 'message' => 'Enter who released the document.'];
+    }
+
+    $dispatchedAt = date('Y-m-d H:i:s');
+    if ($dispatchedAtRaw !== '') {
+        $timestamp = strtotime($dispatchedAtRaw);
+        if ($timestamp === false) {
+            return ['ok' => false, 'message' => 'Enter a valid dispatch date and time.'];
+        }
+        $dispatchedAt = date('Y-m-d H:i:s', $timestamp);
+    }
+
+    $originalName = '';
+    $filename = '';
+    $mimeType = '';
+    $size = 0;
+
+    if (($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+        if (($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file((string) ($upload['tmp_name'] ?? ''))) {
+            return ['ok' => false, 'message' => 'Unable to read the uploaded supporting document.'];
+        }
+        if ((int) ($upload['size'] ?? 0) > 10 * 1024 * 1024) {
+            return ['ok' => false, 'message' => 'Supporting document must be 10 MB or smaller.'];
+        }
+
+        $mime = (new finfo(FILEINFO_MIME_TYPE))->file((string) $upload['tmp_name']);
+        $allowedMime = [
+            'application/pdf' => 'pdf', 'image/jpeg' => 'jpg', 'image/png' => 'png',
+            'application/msword' => 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+            'application/vnd.ms-excel' => 'xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+        ];
+        if (!isset($allowedMime[$mime])) {
+            return ['ok' => false, 'message' => 'Upload a PDF, image, Word, or Excel file for the supporting document.'];
+        }
+
+        $storedName = 'DSP-' . date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.' . $allowedMime[$mime];
+        if (!move_uploaded_file((string) $upload['tmp_name'], DISPATCH_DOCUMENTS_DIR . '/' . $storedName)) {
+            return ['ok' => false, 'message' => 'Unable to save the uploaded supporting document.'];
+        }
+
+        $originalName = basename((string) ($upload['name'] ?? 'document'));
+        $filename = $storedName;
+        $mimeType = $mime;
+        $size = (int) $upload['size'];
+    }
+
+    $dispatch = [
+        'dispatch_id' => 'DSP-' . date('YmdHis') . '-' . bin2hex(random_bytes(3)),
+        'document_type' => $documentType,
+        'subject' => $subject,
+        'recipient_name' => $recipientName,
+        'recipient_agency' => $recipientAgency,
+        'dispatched_by' => $dispatchedBy,
+        'dispatched_at' => $dispatchedAt,
+        'notes' => $notes,
+        'original_name' => $originalName,
+        'filename' => $filename,
+        'mime_type' => $mimeType,
+        'size' => $size,
+    ];
+
+    $dispatches = read_document_dispatches();
+    $dispatches[] = $dispatch;
+    write_document_dispatches($dispatches);
+
+    return ['ok' => true, 'message' => 'Document dispatch recorded.'];
+}
+
+function delete_document_dispatch(string $dispatchId): array
+{
+    $dispatches = read_document_dispatches();
+    $dispatchIndex = null;
+
+    foreach ($dispatches as $index => $dispatch) {
+        if (($dispatch['dispatch_id'] ?? '') === $dispatchId) {
+            $dispatchIndex = $index;
+            break;
+        }
+    }
+
+    if ($dispatchIndex === null) {
+        return ['ok' => false, 'message' => 'Dispatch record was not found.'];
+    }
+
+    $filename = basename((string) ($dispatches[$dispatchIndex]['filename'] ?? ''));
+    $path = DISPATCH_DOCUMENTS_DIR . '/' . $filename;
+    if ($filename !== '' && is_file($path) && !unlink($path)) {
+        return ['ok' => false, 'message' => 'Unable to remove the supporting document file.'];
+    }
+
+    array_splice($dispatches, $dispatchIndex, 1);
+    write_document_dispatches($dispatches);
+
+    return ['ok' => true, 'message' => 'Dispatch record deleted.'];
+}
+
 function employee_document_row_to_record(array $row): array
 {
     return [
