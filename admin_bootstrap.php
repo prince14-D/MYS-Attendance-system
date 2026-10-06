@@ -177,6 +177,7 @@ $allowedAdminPages = [
     'document_dispatch',
     'tally_sheet',
     'payroll_attendance',
+    'department_monthly_print',
     'employee_profiles',
     'user_management',
 ];
@@ -201,6 +202,7 @@ $adminPageLinks = [
     'document_dispatch' => ['label' => 'Document Dispatch Register', 'href' => 'document_dispatch.php'],
     'tally_sheet' => ['label' => 'Attendance Tally Sheet', 'href' => 'tally_sheet.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
     'payroll_attendance' => ['label' => 'Payroll Attendance', 'href' => 'payroll_attendance.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
+    'department_monthly_print' => ['label' => 'Department Monthly Print', 'href' => 'department_monthly_print.php?month=' . urlencode($selectedMonth) . '&department=' . urlencode($selectedDepartment)],
     'employee_profiles' => ['label' => 'Employee Profiles', 'href' => 'employee_profiles.php'],
     'user_management' => ['label' => 'User Management', 'href' => 'user_management.php'],
 ];
@@ -213,6 +215,7 @@ $pageRoles = [
     'employee_letters' => ['admin', 'hr', 'supervisor'],
     'document_dispatch' => ['admin', 'hr', 'supervisor'],
     'tally_sheet' => ['admin', 'supervisor', 'viewer'], 'employee_profiles' => ['admin', 'hr'], 'user_management' => ['admin'],
+    'department_monthly_print' => ['admin', 'hr', 'supervisor', 'viewer'],
     'payroll_attendance' => ['admin', 'hr', 'viewer'],
 ];
 require_roles($pageRoles[$activePage] ?? ['admin']);

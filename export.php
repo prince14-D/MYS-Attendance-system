@@ -29,6 +29,28 @@ if ($departmentId !== '' && $department === null) {
     $departmentId = '';
 }
 
+if ($report === 'department_monthly') {
+    $registerDepartmentId = $departmentId;
+
+    if (current_user_is_department_scoped()) {
+        $registerDepartmentId = current_user_department_id();
+    }
+
+    $registerDepartment = $registerDepartmentId !== '' ? find_department($registerDepartmentId) : null;
+    $registerDepartmentName = $registerDepartment['department_name'] ?? (current_user_is_department_scoped() ? 'Assigned Department' : 'All Departments');
+    $registerScopeName = $registerDepartmentName . ($employeeType !== '' ? ' | Type: ' . $employeeType : '');
+    $monthRecords = current_user_is_department_scoped() && $registerDepartmentId === ''
+        ? []
+        : attendance_for_month($month, $registerDepartmentId);
+    $rows = export_department_monthly_rows($monthRecords, $month, $registerDepartmentName, $employeeType);
+
+    match ($format) {
+        'csv' => download_department_monthly_csv($rows, $month),
+        'pdf' => download_department_monthly_pdf($rows, $month, $registerScopeName),
+        default => download_department_monthly_csv($rows, $month),
+    };
+}
+
 $records = attendance_for_date($date, $departmentId);
 $departmentName = $department ? $department['department_name'] : 'All Departments';
 
@@ -222,6 +244,61 @@ function export_monthly_rows(array $monthRecords, string $month, string $departm
     return $rows;
 }
 
+function export_department_monthly_rows(array $monthRecords, string $month, string $departmentName, string $employeeType): array
+{
+    $employees = read_employees();
+    $records = [];
+
+    foreach ($monthRecords as $date => $dayRecords) {
+        foreach ($dayRecords as $record) {
+            $resolved = export_resolve_record($record, $employees);
+            $employee = $employees[$resolved['employee_number']] ?? null;
+            $recordType = trim((string) ($record['employee_type'] ?? ($employee['employee_type'] ?? 'Employee')));
+
+            if ($employeeType !== '' && $recordType !== $employeeType) {
+                continue;
+            }
+
+            $flags = is_array($record['flags'] ?? null) ? $record['flags'] : [];
+            $status = $resolved['status'];
+
+            $records[] = [
+                $resolved['date'] !== '' ? $resolved['date'] : (string) $date,
+                $resolved['employee_number'],
+                $resolved['employee_name'] !== '' ? $resolved['employee_name'] : '-',
+                $resolved['position'] !== '' ? $resolved['position'] : '-',
+                $resolved['department_name'] !== '' ? $resolved['department_name'] : 'Unassigned',
+                $resolved['clock_in'] !== '' ? $resolved['clock_in'] : '-',
+                $resolved['clock_out'] !== '' ? $resolved['clock_out'] : '-',
+                $resolved['worked_hours'] !== '' ? $resolved['worked_hours'] : '-',
+                $status !== '' ? $status : '-',
+                ($flags['late'] ?? false) === true ? 'Yes' : 'No',
+            ];
+        }
+    }
+
+    usort($records, static fn (array $a, array $b): int => [$a[0], $a[1]] <=> [$b[0], $b[1]]);
+
+    $rows = [
+        [APP_NAME],
+        ['Department Monthly Attendance Register'],
+        ['Month: ' . date('F Y', strtotime($month . '-01'))],
+        ['Department: ' . $departmentName . ($employeeType !== '' ? ' | Type: ' . $employeeType : '')],
+        [''],
+        ['Date', 'Employee Number', 'Employee Name', 'Position', 'Department', 'Clock In', 'Clock Out', 'Worked Hours', 'Status', 'Late'],
+    ];
+
+    foreach ($records as $record) {
+        $rows[] = $record;
+    }
+
+    if ($records === []) {
+        $rows[] = ['No attendance records found for this month and department.'];
+    }
+
+    return $rows;
+}
+
 function download_csv(array $rows, string $date): never
 {
     header('Content-Type: text/csv; charset=utf-8');
@@ -242,6 +319,22 @@ function download_monthly_csv(array $rows, string $month): never
 {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="attendance-' . $month . '-monthly.csv"');
+
+    $output = fopen('php://output', 'w');
+    fwrite($output, "\xEF\xBB\xBF");
+
+    foreach ($rows as $row) {
+        fputcsv($output, $row);
+    }
+
+    fclose($output);
+    exit;
+}
+
+function download_department_monthly_csv(array $rows, string $month): never
+{
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="department-attendance-' . $month . '.csv"');
 
     $output = fopen('php://output', 'w');
     fwrite($output, "\xEF\xBB\xBF");
@@ -789,6 +882,121 @@ function download_monthly_pdf(array $monthRecords, string $month, string $depart
 
     header('Content-Type: application/pdf');
     header('Content-Disposition: attachment; filename="attendance-' . $month . '-monthly.pdf"');
+    header('Content-Length: ' . strlen($pdf));
+
+    echo $pdf;
+    exit;
+}
+
+function build_department_monthly_register_pdf(array $rows, string $month, string $departmentName): string
+{
+    $dataRows = array_slice($rows, 6);
+    if (count($dataRows) === 1 && str_starts_with((string) ($dataRows[0][0] ?? ''), 'No attendance records')) {
+        $dataRows = [];
+    }
+
+    $rowsPerPage = 22;
+    $pageCount = max(1, (int) ceil(max(1, count($dataRows)) / $rowsPerPage));
+    $monthLabel = date('F Y', strtotime($month . '-01'));
+    $objects = [
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '',
+        '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>',
+        '<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>',
+    ];
+    $pageObjectNumbers = [];
+    $contentObjectNumbers = [];
+    $columnHeaders = [
+        ['Date', 34, 48],
+        ['Employee No.', 86, 64],
+        ['Employee Name', 154, 126],
+        ['Position', 284, 100],
+        ['Department', 388, 115],
+        ['Clock In', 507, 57],
+        ['Clock Out', 566, 60],
+        ['Worked', 628, 52],
+        ['Status', 682, 68],
+        ['Late', 754, 40],
+    ];
+
+    for ($pageIndex = 0; $pageIndex < $pageCount; $pageIndex++) {
+        $content = "0.97 0.98 1 rg\n0 0 842 595 re f\n";
+        $content .= "0.07 0.25 0.48 rg\n0 510 842 85 re f\n";
+        $content .= "0.78 0.12 0.20 rg\n0 505 842 5 re f\n";
+        $content .= pdf_logo_block(36, 536);
+        $content .= "1 1 1 rg\n";
+        $content .= pdf_text(APP_NAME, 86, 566, 15, 'F2');
+        $content .= pdf_text('Department Monthly Attendance Register', 86, 549, 11, 'F2');
+        $content .= pdf_text('Month: ' . $monthLabel, 86, 530, 9);
+        $content .= pdf_text('Department: ' . pdf_shorten_text($departmentName, 380, 9), 240, 530, 9);
+        $content .= pdf_text('Generated: ' . date('Y-m-d H:i'), 620, 530, 8);
+        $content .= "0.07 0.25 0.48 rg\n28 478 786 20 re f\n1 1 1 rg\n";
+
+        foreach ($columnHeaders as [$label, $x, $width]) {
+            $content .= pdf_text(pdf_shorten_text($label, $width, 7), $x, 485, 7, 'F2');
+        }
+
+        $start = $pageIndex * $rowsPerPage;
+        $pageRows = array_slice($dataRows, $start, $rowsPerPage);
+        $y = 464;
+        $content .= "0 0 0 rg\n";
+
+        foreach ($pageRows as $rowIndex => $row) {
+            if ($rowIndex % 2 === 0) {
+                $content .= "0.97 0.98 0.99 rg\n28 " . ($y - 4) . " 786 15 re f\n";
+            }
+
+            $content .= "0.84 0.87 0.91 RG\n" . pdf_line(28, $y - 5, 814, $y - 5) . "0 0 0 rg\n";
+            foreach ($columnHeaders as $columnIndex => [$label, $x, $width]) {
+                $cell = trim((string) ($row[$columnIndex] ?? '-'));
+                $content .= pdf_text(pdf_shorten_text($cell, $width, 7), $x, $y, 7);
+            }
+
+            $y -= 15;
+        }
+
+        if ($dataRows === []) {
+            $content .= pdf_text('No attendance records found for this month and department.', 38, 450, 10, 'F2');
+        }
+
+        $content .= "0 0 0 rg\n";
+        $content .= pdf_line(28, 62, 814, 62);
+        $content .= pdf_text('Prepared By: ____________________', 34, 46, 8);
+        $content .= pdf_text('Approved By: ____________________', 330, 46, 8);
+        $content .= pdf_text('Page ' . ($pageIndex + 1) . ' of ' . $pageCount, 740, 46, 8);
+
+        $pageObjectNumbers[] = count($objects) + 1;
+        $contentObjectNumbers[] = count($objects) + 2;
+        $objects[] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' . $contentObjectNumbers[$pageIndex] . ' 0 R >>';
+        $objects[] = '<< /Length ' . strlen($content) . ">>\nstream\n" . $content . 'endstream';
+    }
+
+    $kids = implode(' ', array_map(static fn (int $number): string => $number . ' 0 R', $pageObjectNumbers));
+    $objects[1] = '<< /Type /Pages /Kids [' . $kids . '] /Count ' . $pageCount . ' >>';
+    $pdf = "%PDF-1.4\n";
+    $offsets = [0];
+
+    foreach ($objects as $number => $object) {
+        $offsets[] = strlen($pdf);
+        $pdf .= ($number + 1) . " 0 obj\n" . $object . "\nendobj\n";
+    }
+
+    $xrefOffset = strlen($pdf);
+    $pdf .= "xref\n0 " . (count($objects) + 1) . "\n0000000000 65535 f \n";
+
+    for ($index = 1; $index <= count($objects); $index++) {
+        $pdf .= sprintf("%010d 00000 n \n", $offsets[$index]);
+    }
+
+    return $pdf . "trailer\n<< /Size " . (count($objects) + 1) . " /Root 1 0 R >>\nstartxref\n" . $xrefOffset . "\n%%EOF";
+}
+
+function download_department_monthly_pdf(array $rows, string $month, string $departmentName): never
+{
+    $pdf = build_department_monthly_register_pdf($rows, $month, $departmentName);
+
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="department-attendance-' . $month . '.pdf"');
     header('Content-Length: ' . strlen($pdf));
 
     echo $pdf;
