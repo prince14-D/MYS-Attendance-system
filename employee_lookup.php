@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/storage.php';
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 $employee = find_employee((string) ($_GET['employee_number'] ?? ''));
 if ($employee === null) {
     echo json_encode(['found' => false]);

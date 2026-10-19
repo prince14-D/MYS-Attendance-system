@@ -1,4 +1,4 @@
-const SW_VERSION = 'v3';
+const SW_VERSION = 'v4';
 const STATIC_CACHE = `mys-attendance-static-${SW_VERSION}`;
 const RUNTIME_CACHE = `mys-attendance-runtime-${SW_VERSION}`;
 const STATIC_ASSETS = [
@@ -121,21 +121,5 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Other same-origin requests: network first, cache fallback.
-    event.respondWith((async () => {
-        const cache = await caches.open(RUNTIME_CACHE);
-
-        try {
-            const response = await fetch(request);
-
-            if (isCacheableResponse(response)) {
-                cache.put(request, response.clone());
-            }
-
-            return response;
-        } catch (error) {
-            const cached = await cache.match(request);
-            return cached || Response.error();
-        }
-    })());
+    // Dynamic same-origin requests must not fall back to cached PHP/API data.
 });
