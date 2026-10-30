@@ -1,4 +1,4 @@
-const SW_VERSION = 'v4';
+const SW_VERSION = 'v5';
 const STATIC_CACHE = `mys-attendance-static-${SW_VERSION}`;
 const RUNTIME_CACHE = `mys-attendance-runtime-${SW_VERSION}`;
 const STATIC_ASSETS = [
@@ -77,7 +77,7 @@ self.addEventListener('fetch', (event) => {
     if (request.mode === 'navigate') {
         event.respondWith((async () => {
             try {
-                const response = await fetch(request);
+                const response = await fetch(request, { cache: 'no-store' });
 
                 if (isCacheableResponse(response)) {
                     const cache = await caches.open(RUNTIME_CACHE);

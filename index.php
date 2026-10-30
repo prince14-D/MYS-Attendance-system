@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/storage.php';
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
 $result = null;
 $employeeDirectory = all_employees();
@@ -225,16 +226,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }, {});
         const geofenceSettings = <?= json_encode($geofencePublicSettings, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
         const employeeClockStatusByNumber = <?= json_encode($employeeClockStatusDirectory, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+        let attendanceDate = <?= json_encode($today) ?>;
         const offlineQueueKey = 'mys_attendance_offline_queue';
         const deviceIdKey = 'mys_attendance_device_id';
         const deviceNameKey = 'mys_attendance_device_name';
         const onlineRequestTimeoutMs = 12000;
         const employeeDirectoryRefreshMs = 60000;
         const employeeLookupRetryMs = 15000;
+        const offlineSyncRetryMs = 30000;
         const lastLookupAttemptByNumber = {};
         let stream = null;
         let pendingInstallPrompt = null;
         let syncNoticeTimer = null;
+        let syncInProgress = false;
+        let serverReachable = null;
 
         function mergeEmployeeIntoDirectory(employee) {
             const employeeNumber = String(employee?.employee_number || '').toUpperCase();
@@ -250,6 +255,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         // registered employees and cross-device clock actions show up without a page reload.
         async function refreshEmployeeDirectory() {
             if (!navigator.onLine) {
+                serverReachable = false;
+                updateOfflineStatus();
                 return;
             }
 
@@ -257,16 +264,50 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 const response = await fetch('employee_directory_feed.php', { cache: 'no-store' });
 
                 if (!response.ok) {
+                    serverReachable = false;
+                    updateOfflineStatus();
                     return;
                 }
 
                 const data = await response.json();
+                Object.keys(employeesByNumber).forEach((employeeNumber) => {
+                    delete employeesByNumber[employeeNumber];
+                });
                 (data.employees || []).forEach(mergeEmployeeIntoDirectory);
+                attendanceDate = data.date || attendanceDate;
+                Object.keys(employeeClockStatusByNumber).forEach((employeeNumber) => {
+                    delete employeeClockStatusByNumber[employeeNumber];
+                });
                 Object.assign(employeeClockStatusByNumber, data.status || {});
+                serverReachable = true;
+                updateOfflineStatus();
                 syncActionState();
             } catch (error) {
-                // Ignore network failures; the next interval will retry.
+                serverReachable = false;
+                updateOfflineStatus();
             }
+        }
+
+        function attendanceDateForRecord(record) {
+            if (!record?.recorded_at) {
+                return '';
+            }
+
+            const timestamp = new Date(record.recorded_at);
+
+            if (Number.isNaN(timestamp.getTime())) {
+                return '';
+            }
+
+            const parts = new Intl.DateTimeFormat('en-US', {
+                timeZone: 'Africa/Monrovia',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            }).formatToParts(timestamp);
+            const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+            return `${values.year}-${values.month}-${values.day}`;
         }
 
         // On-demand fallback: if a typed employee number isn't in the locally
@@ -343,7 +384,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             };
 
             readQueue().forEach((queued) => {
-                if (String(queued.employee_number || '').toUpperCase() !== employeeNumber) {
+                if (
+                    String(queued.employee_number || '').toUpperCase() !== employeeNumber
+                    || attendanceDateForRecord(queued) !== attendanceDate
+                ) {
                     return;
                 }
 
@@ -357,6 +401,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             });
 
             return status;
+        }
+
+        function getPendingActions(employeeNumber) {
+            return new Set(readQueue()
+                .filter((queued) => (
+                    String(queued.employee_number || '').toUpperCase() === employeeNumber
+                    && attendanceDateForRecord(queued) === attendanceDate
+                ))
+                .map((queued) => queued.action));
         }
 
         function isActionAllowed(employeeNumber, action) {
@@ -396,6 +449,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             }
 
             const status = getLocalClockStatus(employeeNumber);
+            const pendingActions = getPendingActions(employeeNumber);
+
+            if (pendingActions.size > 0) {
+                const pendingClockIn = pendingActions.has('clock_in');
+                const pendingClockOut = pendingActions.has('clock_out');
+                const hint = pendingClockIn && pendingClockOut
+                    ? 'Clock in and clock out are saved on this device and waiting to sync.'
+                    : pendingClockIn
+                        ? `Clock in is saved on this device and waiting to sync.${status.clocked_in && !status.clocked_out ? ' You can now clock out.' : ''}`
+                        : 'Clock out is saved on this device and waiting to sync.';
+
+                setActionState({
+                    disableClockIn: status.clocked_in || status.clocked_out,
+                    disableClockOut: !status.clocked_in || status.clocked_out,
+                    hint
+                });
+                return;
+            }
 
             if (status.clocked_out) {
                 setActionState({
@@ -435,6 +506,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
         refreshClock();
         setInterval(refreshClock, 1000);
+        refreshEmployeeDirectory();
         setInterval(refreshEmployeeDirectory, employeeDirectoryRefreshMs);
 
         const deviceId = getOrCreateDeviceId();
@@ -600,14 +672,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
             const queue = readQueue();
             const online = navigator.onLine;
-            offlineStatus.classList.toggle('offline', !online);
+            const connected = online && serverReachable === true;
+            offlineStatus.classList.toggle('offline', !connected);
             offlineStatus.classList.toggle('has-queue', queue.length > 0);
-            statusDot.setAttribute('aria-label', online ? 'Online' : 'Offline');
-            statusText.textContent = online ? 'Online mode' : 'Offline mode';
+            statusDot.setAttribute('aria-label', connected ? 'Online' : 'Offline');
+            statusText.textContent = connected
+                ? 'Online mode'
+                : online
+                    ? serverReachable === false ? 'Server unavailable' : 'Checking server...'
+                    : 'Offline mode';
             queueCount.textContent = queue.length > 0 ? `${queue.length} waiting to sync` : '';
         }
 
-        function showSyncNotice(message) {
+        function showSyncNotice(message, persistent = false) {
             if (!syncNotice) {
                 return;
             }
@@ -619,7 +696,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 syncNoticeTimer = null;
             }
 
-            if (message !== '') {
+            if (message !== '' && !persistent) {
                 syncNoticeTimer = setTimeout(() => {
                     syncNotice.textContent = '';
                     syncNoticeTimer = null;
@@ -953,18 +1030,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             return true;
         }
 
-        function isPermanentSyncFailure(message) {
+        function isAlreadyRecordedMessage(message) {
             const normalized = String(message || '').toLowerCase();
 
-            return normalized.includes('already clocked in')
-                || normalized.includes('already clocked out')
-                || normalized.includes('is not registered')
-                || normalized.includes('invalid attendance action')
-                || normalized.includes('invalid time');
+            return normalized.includes('already clocked in') || normalized.includes('already clocked out');
         }
 
         async function syncOfflineQueue() {
-            if (!navigator.onLine) {
+            if (!navigator.onLine || syncInProgress) {
                 updateOfflineStatus();
                 return;
             }
@@ -976,63 +1049,84 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 return;
             }
 
+            syncInProgress = true;
+
             try {
                 const response = await fetch('sync.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ records: queue })
+                    body: JSON.stringify({ records: queue }),
+                    cache: 'no-store'
                 });
 
-                if (!response.ok) {
-                    throw new Error('Sync failed');
+                const responseText = await response.text();
+                let payload = null;
+
+                try {
+                    payload = JSON.parse(responseText);
+                } catch (error) {
+                    // Report the HTTP status when the server returns HTML or an empty body.
                 }
 
-                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(payload?.message || `Server returned HTTP ${response.status}.`);
+                }
+
+                if (!Array.isArray(payload?.results)) {
+                    throw new Error(payload?.message || 'The server returned an invalid sync response.');
+                }
+
                 const completed = new Set();
-                const permanentFailures = new Set();
                 const queueById = new Map(queue.map((record) => [record.id, record]));
                 const syncedRecords = [];
+                const failedResults = [];
 
                 (payload.results || []).forEach((result) => {
                     const record = queueById.get(result.id);
 
-                    if (result.ok) {
+                    if (result.ok || isAlreadyRecordedMessage(result.message || '')) {
                         completed.add(result.id);
 
                         if (record) {
                             applyRecordToLocalStatus(record);
-                            syncedRecords.push(record);
+
+                            if (result.ok) {
+                                syncedRecords.push(record);
+                            }
                         }
 
                         return;
                     }
 
-                    if (isPermanentSyncFailure(result.message || '')) {
-                        permanentFailures.add(result.id);
-
-                        // Align local state when the server confirms this action already exists.
-                        if (record) {
-                            const normalized = String(result.message || '').toLowerCase();
-
-                            if (normalized.includes('already clocked in') || normalized.includes('already clocked out')) {
-                                applyRecordToLocalStatus(record);
-                            }
-                        }
-                    }
+                    failedResults.push(result);
                 });
 
-                const remaining = queue.filter((record) => !completed.has(record.id) && !permanentFailures.has(record.id));
+                const remaining = queue.filter((record) => !completed.has(record.id));
+                const submittedIds = new Set(queue.map((record) => record.id));
+                const addedDuringSync = readQueue().filter((record) => !submittedIds.has(record.id));
+                remaining.push(...addedDuringSync);
                 writeQueue(remaining);
                 syncActionState();
 
-                if (syncedRecords.length === 1) {
+                if (failedResults.length > 0) {
+                    const firstFailure = failedResults[0];
+                    const syncedCount = syncedRecords.length;
+                    const syncedMessage = syncedCount > 0 ? ` ${syncedCount} other record${syncedCount === 1 ? '' : 's'} synced.` : '';
+                    showSyncNotice(`Sync needs attention: ${firstFailure.message || 'The server rejected an attendance record.'}.${syncedMessage} Records remain saved on this device.`, true);
+                } else if (syncedRecords.length === 1) {
                     const record = syncedRecords[0];
                     showSyncNotice(`Synced offline ${actionLabel(record.action)} for ${record.employee_number}.`);
                 } else if (syncedRecords.length > 1) {
                     showSyncNotice(`Synced ${syncedRecords.length} offline attendance records.`);
+                } else if (remaining.length > 0) {
+                    showSyncNotice(`${remaining.length} attendance record${remaining.length === 1 ? '' : 's'} still waiting to sync.`);
                 }
+
             } catch (error) {
                 updateOfflineStatus();
+                showSyncNotice(`Could not sync attendance: ${error.message || 'Network or server error.'} Records remain saved on this device.`, true);
+            } finally {
+                syncInProgress = false;
             }
         }
 
@@ -1200,6 +1294,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 syncOfflineQueue();
             }
         });
+        setInterval(syncOfflineQueue, offlineSyncRetryMs);
         updateOfflineStatus();
         syncActionState();
         syncOfflineQueue();
